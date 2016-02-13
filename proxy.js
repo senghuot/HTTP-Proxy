@@ -32,9 +32,15 @@ net.createServer(function(socket) {
 	clients.push(socket);
 
 	socket.on('data', function(data) {
-		//console.log(data.getString());
-		console.log(decoder.write(data));
-	})
+		var message = decoder.write(data).split('\n');
+		console.log(message);
+		// check to make sure we get valid data
+		if (message.lengh >= 2 && message[1].substring(0, 6).toLowercase() == 'host:') {
+			
+		}
+
+		//console.log(decoder.write(data));
+	});
 
 	// debug for when client disconnects
 	socket.on('end', function() {

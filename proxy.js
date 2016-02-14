@@ -70,6 +70,10 @@ function getRequestProtocolType(header) {
 	}
 }
 
+function serverConnectListener() {
+	console.log("proxy has connected to server");
+}
+
 
 const SERVER_PORT    = 	parseInt(process.argv[2]);
 
@@ -85,19 +89,19 @@ if (isNaN(SERVER_PORT)) {
     process.exit();
 }
 
+// 2 maps so we can efficiently lookup the corresponding
+// socket in either direction
 var clients = [];
+var servers = []
 
 // establishes connection with the browser
-net.createServer(function(socket) {
+net.createServer(function(clientSocket) {
 
-	socket.name = socket.remoteAddress + ":" + socket.remotePort;
-	console.log('remote address ' + socket.remoteAddress);
-	console.log('port ' + socket.remotePort);
+	clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
+	console.log('remote address ' + clientSocket.remoteAddress);
+	console.log('port ' + clientSocket.remotePort);
 
-	// adds the client to our list
-	clients.push(socket);
-
-	socket.on('data', function(data) {
+	clientSocket.on('data', function(data) {
 		var message = decoder.write(data);
 		console.log(message);
 		// check to make sure we get valid data
@@ -110,13 +114,35 @@ net.createServer(function(socket) {
 		console.log("message is HTTPS: " + isHTTPS(message));
 		console.log("message protocol type: " + getRequestProtocolType(message));
 
+
+		if (clientSocket in clients) {
+			// we've seen data from this clientSocket before, so we have a mapping
+			// to its corresponding server clientSocket.
+
+		} else {
+			// if this is the first time receiving data from this client,
+			// establish a connection to the server it wants to communicate
+			// with and store the clientSocket mappings
+
+			// create a clientSocket to talk to the server
+			var serverSocket = new net.Socket();
+
+			// connect to host:port defined in HTTP request
+			var dstHost = getRequestHostname(message);
+			var dstPort = getRequestPort(message);
+			var srcHost = "localhost";
+			var srcPort = 0;  			// bind to any port
+			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort}, serverConnectListener);
+
+		}
+
 		//console.log(decoder.write(data));
 	});
 
 	// debug for when client disconnects
-	socket.on('end', function() {
-		clients.splice(clients.indexOf(socket), 1);
-		console.log(socket.name + " left the chat.\n")
+	clientSocket.on('end', function() {
+		clients.splice(clients.indexOf(clientSocket), 1);
+		console.log(clientSocket.name + " left the chat.\n")
 	});
 
 

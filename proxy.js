@@ -167,6 +167,9 @@ net.createServer(function(clientSocket) {
 			console.log("src host: " + srcHost);
 			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort}, serverConnectListener);
 			console.log("connected");
+			serverSocket.on("error", function(error) {
+				console.log("connectivity problem: " + error);
+			})
 
 		}
 

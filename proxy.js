@@ -149,11 +149,15 @@ var clients = [];
 var servers = [];
 
 // establishes connection with the browser
+//TODO: it appears that we're seeing the
+// same TCP socket for every connection from the browser
+// If we want to distinguish between different tabs, or closing and opening tabs,
+// we need a way to differentiate our client facing sockets
 net.createServer(function(clientSocket) {
 
 	clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
 	console.log('remote address ' + clientSocket.remoteAddress);
-	console.log('port ' + clientSocket.remotePort);
+	console.log('remote port ' + clientSocket.remotePort);
 
 	clientSocket.on('data', function(data) {
 		var message = decoder.write(data);
@@ -197,6 +201,8 @@ net.createServer(function(clientSocket) {
 				console.log("failed to connect to server");
 				response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
 				servers[serverSocket].write(response);
+				delete clients[clientSocket];
+				delete servers[serverSocket];
 				serverSocket.end();
 			});
 
@@ -204,6 +210,8 @@ net.createServer(function(clientSocket) {
 				console.log("failed to connect to server");
 				response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
 				servers[serverSocket].write(response);
+				delete clients[clientSocket];
+				delete servers[serverSocket];
 				serverSocket.end();
 			})
 
@@ -213,7 +221,6 @@ net.createServer(function(clientSocket) {
 			serverSocket.on('connect', function() {
 				console.log("proxy has connected to server");
 				response = "HTTP/1.0 200 OK\r\n\r\n";
-				clientSocket = servers[serverSocket];
 				servers[serverSocket].write(response);
 				serverSocket.setTimeout(0); // disables
 
@@ -271,6 +278,8 @@ net.createServer(function(clientSocket) {
 	clientSocket.on('close', function(had_error) {
 		clients.splice(clients.indexOf(clientSocket), 1);
 		console.log(clientSocket.name + " fully closed its connection w/ proxy");
+		delete servers[clients[clientSocket]];
+		delete clients[clientSocket];
 	});
 
 

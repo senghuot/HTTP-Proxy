@@ -92,7 +92,9 @@ function getRequestProtocolType(header) {
 	}
 }
 
-function transformHeader(header) {
+// takes an HTTP header and transforms it into our 'proxy friendly'
+// version so we don't have to deal with framing issues :)
+function transformHTTPHeader(header) {
 	var headerLines = header.split("\r\n");
 	headerLines[0] = setHTTPVersion(headerLines[0], "1.0");
 	headerLines = setConnectionTagClosed(headerLines);
@@ -118,6 +120,13 @@ function setConnectionTagClosed(headerLines) {
 	}
 	return headerLines;
 }
+
+// function serverConnectionFailure(clientSocket, serverSocket) {
+// 	console.log("failed to connect to server");
+// 	response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
+// 	clientSocket.write(response);
+// 	serverSocket.end();
+// }
 
 
 const SERVER_PORT    = 	parseInt(process.argv[2]);
@@ -161,12 +170,14 @@ net.createServer(function(clientSocket) {
 		console.log("message protocol type: " + getRequestProtocolType(message));
 
 		console.log("transformed header:");
-		console.log(transformHeader(message));
+		console.log(transformHTTPHeader(message));
 
 
 		if (clientSocket in clients) {
 			// we've seen data from this clientSocket before, so we have a mapping
 			// to its corresponding server clientSocket.
+			var serverSocket = clients[clientSocket];
+			serverSocket.write(data);
 
 		} else {
 			// if this is the first time receiving data from this client,
@@ -177,17 +188,24 @@ net.createServer(function(clientSocket) {
 			var serverSocket = new net.Socket();
 			clients[clientSocket] = serverSocket;
 			servers[serverSocket] = clientSocket;
+			serverSocket.setTimeout(3000);
 
 			// if connection fails, send back an HTTP 502 Bad Gateway response to the client
 			// TODO: browser doesn't show indication of receiving response
 			serverSocket.on('error', function(errorObj) {
-				console.log("failed to connect to server");
 				console.log("error: " + errorObj);
+				console.log("failed to connect to server");
 				response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
-				clientSocket.write(response);
-				clientSocket.end();
+				servers[serverSocket].write(response);
 				serverSocket.end();
 			});
+
+			serverSocket.on('timeout', function() {
+				console.log("failed to connect to server");
+				response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
+				servers[serverSocket].write(response);
+				serverSocket.end();
+			})
 
 			// if we are able to establish a connection with a server,
 			// send back a HTTP 200 OK response to the client
@@ -196,9 +214,20 @@ net.createServer(function(clientSocket) {
 				console.log("proxy has connected to server");
 				response = "HTTP/1.0 200 OK\r\n\r\n";
 				clientSocket = servers[serverSocket];
-				clientSocket.write(response);
+				servers[serverSocket].write(response);
+				serverSocket.setTimeout(0); // disables
 
+				// upon connection, send our data to the server
+				serverSocket.write(data);
 			});
+
+			// if we receive any information back from the server,
+			// shovel back any bytes to our client
+			serverSocket.on('data', function(serverData) {
+				console.log("server data:");
+				console.log(decoder.write(serverData));
+				servers[serverSocket].write(serverData);
+			})
 
 			// connect to host:port defined in HTTP request
 			var host = getRequestHostname(message);
@@ -220,11 +249,11 @@ net.createServer(function(clientSocket) {
 			// if you use google's ip: 8.8.8.8 you get unreachable destination
 			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
 
-			// comment out and then default option is to throw
-			// an exception
-			serverSocket.on("error", function(error) {
-				console.log("connectivity problem: " + error);
-			})
+			// // comment out and then default option is to throw
+			// // an exception
+			// serverSocket.on("error", function(error) {
+			// 	console.log("connectivity problem: " + error);
+			// })
 
 		}
 

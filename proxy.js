@@ -22,7 +22,7 @@ function kthLineOfHeader(header, k) {
 // but we should also be 'Host' insensitive?
 // Examines an HTTP 1.1 request header and returns the hostname the message is en route to
 function getRequestHostname(header) {
-	tags = header.split("\r\n");
+	var tags = header.split("\r\n");
 	for (var i = 0; i < tags.length; i++) {
 		if (tags[i].startsWith("Host:")) {
 			// we've found a 'Host' tag! extract and return the hostname
@@ -52,7 +52,7 @@ function isHTTPS(header) {
 
 // returns the type of protocol for this HTTP message (HTTP1_0, HTTP1_1, HTTPS)
 function getRequestProtocolType(header) {
-	versionStr = kthLineOfHeader(header, 0).split(" ")[2];
+	var versionStr = kthLineOfHeader(header, 0).split(" ")[2];
 
 	return versionStr;
 
@@ -70,8 +70,31 @@ function getRequestProtocolType(header) {
 	}
 }
 
-function serverConnectListener() {
-	console.log("proxy has connected to server");
+function transformHeader(header) {
+	var headerLines = header.split("\r\n");
+	headerLines[0] = setHTTPVersion(headerLines[0], "1.0");
+	headerLines = setConnectionTagClosed(headerLines);
+	return headerLines.join("\r\n").concat("\r\n");
+}
+
+function setHTTPVersion(firstLineOfHeader, versionNum) {
+	firstLineSplit = firstLineOfHeader.split(" ");
+	firstLineSplit[2] = "HTTP/" + versionNum;
+	return firstLineSplit.join(" ");
+}
+
+// Takes an array of Strings, representing the lines representing the
+// lines of an HTTP header, and returns an array of Strings with all 'Connection'
+// and 'Proxy-connection' tags set to 'close'
+function setConnectionTagClosed(headerLines) {
+	for (var i = 0; i < headerLines.length; i++) {
+		if (headerLines[i].startsWith("Connection:")) {
+			headerLines[i] = "Connection: close";
+		} else if (headerLines[i].startsWith("Proxy-connection:")) {
+			headerLines[i] = "Proxy-connection: close";
+		}
+	}
+	return headerLines;
 }
 
 
@@ -114,6 +137,9 @@ net.createServer(function(clientSocket) {
 		console.log("message is HTTPS: " + isHTTPS(message));
 		console.log("message protocol type: " + getRequestProtocolType(message));
 
+		console.log("transformed header:");
+		console.log(transformHeader(message));
+
 
 		if (clientSocket in clients) {
 			// we've seen data from this clientSocket before, so we have a mapping
@@ -124,15 +150,39 @@ net.createServer(function(clientSocket) {
 			// establish a connection to the server it wants to communicate
 			// with and store the clientSocket mappings
 
-			// create a clientSocket to talk to the server
+			// create a clientSocket to talk to the server, store mappings
 			var serverSocket = new net.Socket();
+			clients[clientSocket] = serverSocket;
+			servers[serverSocket] = clientSocket;
+
+			// if connection fails, send back an HTTP 502 Bad Gateway response to the client
+			// TODO: browser doesn't show indication of receiving response
+			serverSocket.on('error', function(errorObj) {
+				console.log("failed to connect to server");
+				console.log("error: " + errorObj);
+				response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
+				clientSocket.write(response);
+				clientSocket.end();
+				serverSocket.end();
+			});
+
+			// if we are able to establish a connection with a server,
+			// send back a HTTP 200 OK response to the client
+			// TODO: browser vreceives no indication of receiving response
+			serverSocket.on('connect', function() {
+				console.log("proxy has connected to server");
+				response = "HTTP/1.0 200 OK\r\n\r\n";
+				clientSocket = servers[serverSocket];
+				clientSocket.write(response);
+
+			});
 
 			// connect to host:port defined in HTTP request
 			var dstHost = getRequestHostname(message);
 			var dstPort = getRequestPort(message);
-			var srcHost = "localhost";
+			var srcHost = "0.0.0.0";
 			var srcPort = 0;  			// bind to any port
-			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort}, serverConnectListener);
+			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
 
 		}
 
@@ -140,9 +190,16 @@ net.createServer(function(clientSocket) {
 	});
 
 	// debug for when client disconnects
+	// Emitted when the other end of the socket sends a FIN packet.
 	clientSocket.on('end', function() {
 		clients.splice(clients.indexOf(clientSocket), 1);
-		console.log(clientSocket.name + " left the chat.\n")
+		console.log(clientSocket.name + " sent a FIN packet.\n");
+	});
+
+	// Emitted once the socket is fully closed
+	clientSocket.on('close', function(had_error) {
+		clients.splice(clients.indexOf(clientSocket), 1);
+		console.log(clientSocket.name + " fully closed its connection w/ proxy");
 	});
 
 

@@ -209,7 +209,7 @@ net.createServer(function(clientSocket) {
 			if (host.port) {
 				dstPort = host.port;
 			}
-			var srcHost = "127.0.0.1";
+			var srcHost = "0.0.0.0";
 			var srcPort = 0;  			// bind to any port
 
 			console.log("dst port: " + dstPort);
@@ -218,8 +218,8 @@ net.createServer(function(clientSocket) {
 			console.log("src host: " + srcHost);
 
 			// if you use google's ip: 8.8.8.8 you get unreachable destination
-			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort}, serverConnectListener);
-			
+			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
+
 			// comment out and then default option is to throw
 			// an exception
 			serverSocket.on("error", function(error) {

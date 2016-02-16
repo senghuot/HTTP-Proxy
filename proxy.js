@@ -1,5 +1,4 @@
 var net		= require('net');
-//var ip 		= require('ip');
 var message = require('./message');
 
 // used to read buffer and convert to string
@@ -12,8 +11,10 @@ const PROTOCOL = {
     HTTP1_1: 1,
 }
 
-// helper functions
+const HTTP_DEFAULT_PORT = 80;
+const HTTPS_DEFAULT_PORT = 443;
 
+// helper functions
 function kthLineOfHeader(header, k) {
 	return header.split("\r\n")[k];
 }
@@ -24,27 +25,26 @@ function kthLineOfHeader(header, k) {
 // returns an object: {hostname: "hostname", port: port}
 function getRequestHostname(header) {
 	// QUESTION: is the end always guarenteed to be \r\n?
-	tags = header.split("\r\n");
+	const tags = header.split("\r\n");
 	for (var i = 0; i < tags.length; i++) {
-		// TODO: implement 'Host' tag insensitivity and white space
-		// TODO: done, CR me, Scottie!
-
-		// eliminates case sensetivity and white spaces
+		// eliminates case sensitivity and white spaces
 		var body = tags[i].toLowerCase().split(" ").join("");
-		if (body.substring(0, 5) == 'host:') {
-			// we've found a 'Host' tag! extract and return the hostname
 
+        // look for 'Host' and return the hostname
+		if (body.substring(0, 5) == 'host:') {
 			// ignores host and grabs hostname:ip
 			body = body.substring(5).split(":");
 			var host = {};
 
-			// TODO use ip module to transform
 			host.hostname = body[0]
 
 			// checks if ports were included
 			if (body.length == 2) {
 				host.port = parseInt(body[1]);
-			}
+            } else {
+                host.port = getRequestPort(header);
+            }
+
 			return host;
 		}
 	}
@@ -53,20 +53,16 @@ function getRequestHostname(header) {
 // Examines an HTTP 1.1 request header and returns the port we should use to
 // establish a connection with the server this message is trying to reach.
 function getRequestPort(header) {
-	// TODO: search for port in 'Host' tag and URI before conforming to default
-
 	if (isHTTPS(kthLineOfHeader(header, 0))) {
-		return 443;
+		return HTTPS_DEFAULT_PORT;
 	} else {
-		return 80;
+		return HTTP_DEFAULT_PORT;
 	}
 }
 
 
 function isHTTPS(header) {
 	uri = kthLineOfHeader(header, 0).split(" ")[1];
-	console.log("uri type: " + typeof(uri));
-	console.log('uri: ' + uri.toLowerCase());
 	// WARNING:might have to be aware when we have ftp
 	// and other connections that's not http or https
 	return (uri.toLowerCase().indexOf('https://') === 0);
@@ -128,9 +124,7 @@ function setConnectionTagClosed(headerLines) {
 // 	serverSocket.end();
 // }
 
-
 const SERVER_PORT    = 	parseInt(process.argv[2]);
-
 
 // reading input form stdin
 if (process.argv.length != 3) {
@@ -156,116 +150,87 @@ var servers = [];
 net.createServer(function(clientSocket) {
 
 	clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
-	console.log('remote address ' + clientSocket.remoteAddress);
+    clientSocket.on('data', function(data) {
+        var message = decoder.write(data);
+
+        if (clientSocket in clients) {
+            // we've seen data from this clientSocket before, so we have a mapping
+            // to its corresponding server clientSocket.
+            var serverSocket = clients[clientSocket];
+            serverSocket.write(data);
+
+        } else {
+            // if this is the first time receiving data from this client,
+            // establish a connection to the server it wants to communicate
+            // with and store the clientSocket mappings
+
+            // create a clientSocket to talk to the server, store mappings
+            var serverSocket = new net.Socket();
+            clients[clientSocket] = serverSocket;
+            servers[serverSocket] = clientSocket;
+            serverSocket.setTimeout(3000);
+
+            // if connection fails, send back an HTTP 502 Bad Gateway response to the client
+            // TODO: browser doesn't show indication of receiving response
+            serverSocket.on('error', function (errorObj) {
+                console.log("error: " + errorObj);
+                console.log("failed to connect to server");
+                response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
+                servers[serverSocket].write(response);
+                delete clients[clientSocket];
+                delete servers[serverSocket];
+                serverSocket.end();
+            });
+
+            serverSocket.on('timeout', function () {
+                console.log("failed to connect to server");
+                response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
+                servers[serverSocket].write(response);
+                delete clients[clientSocket];
+                delete servers[serverSocket];
+                serverSocket.end();
+            })
+
+            // if we are able to establish a connection with a server,
+            // send back a HTTP 200 OK response to the client
+            // TODO: browser vreceives no indication of receiving response
+            serverSocket.on('connect', function () {
+                console.log("proxy has connected to server");
+                const response = "HTTP/1.0 200 OK\r\n\r\n";
+                servers[serverSocket].write(response);
+
+                // upon connection, send our data to the server
+                clients[clientSocket].setTimeout(0); // disables
+                clients[clientSocket].write(data);
+            });
+
+            // if we receive any information back from the server,
+            // shovel back any bytes to our client
+            serverSocket.on('data', function (serverData) {
+                // TODO: broswer can't tell the different between header and content in serverData.
+                // the reason why simple.txt and simple.html doesn't load because we never close
+                // the connection properly.
+                console.log("server data:");
+                // this work except we have could potentially close to early if we need to download
+                // additional files such as css, img...etcgj
+                //servers[serverSocket].end(serverData);
+                servers[serverSocket].write(serverData);
+            })
+
+            // connect to host:port defined in HTTP request
+            var host = getRequestHostname(message);
+            var dstHost = host.hostname;
+            var dstPort = host.port;
+
+            var srcHost = "0.0.0.0";
+            var srcPort = 0; // bind to any port
+
+            // if you use google's ip: 8.8.8.8 you get unreachable destination
+            serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
+        }
+    });
+
 	console.log('remote port ' + clientSocket.remotePort);
-
-	clientSocket.on('data', function(data) {
-		var message = decoder.write(data);
-		console.log(message);
-		// check to make sure we get valid data
-		// if (message.lengh >= 2 && message[1].substring(0, 6).toLowercase() == 'host:') {
-		//
-		// }
-		var test = getRequestHostname(message);
-		console.log("message hostname: " + test.hostname);
-		console.log("messate port from host object: " + test.port);
-		console.log("message port: " + getRequestPort(message));
-		console.log("message is HTTPS: " + isHTTPS(message));
-		console.log("message protocol type: " + getRequestProtocolType(message));
-
-		console.log("transformed header:");
-		console.log(transformHTTPHeader(message));
-
-
-		if (clientSocket in clients) {
-			// we've seen data from this clientSocket before, so we have a mapping
-			// to its corresponding server clientSocket.
-			var serverSocket = clients[clientSocket];
-			serverSocket.write(data);
-
-		} else {
-			// if this is the first time receiving data from this client,
-			// establish a connection to the server it wants to communicate
-			// with and store the clientSocket mappings
-
-			// create a clientSocket to talk to the server, store mappings
-			var serverSocket = new net.Socket();
-			clients[clientSocket] = serverSocket;
-			servers[serverSocket] = clientSocket;
-			serverSocket.setTimeout(3000);
-
-			// if connection fails, send back an HTTP 502 Bad Gateway response to the client
-			// TODO: browser doesn't show indication of receiving response
-			serverSocket.on('error', function(errorObj) {
-				console.log("error: " + errorObj);
-				console.log("failed to connect to server");
-				response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
-				servers[serverSocket].write(response);
-				delete clients[clientSocket];
-				delete servers[serverSocket];
-				serverSocket.end();
-			});
-
-			serverSocket.on('timeout', function() {
-				console.log("failed to connect to server");
-				response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
-				servers[serverSocket].write(response);
-				delete clients[clientSocket];
-				delete servers[serverSocket];
-				serverSocket.end();
-			})
-
-			// if we are able to establish a connection with a server,
-			// send back a HTTP 200 OK response to the client
-			// TODO: browser vreceives no indication of receiving response
-			serverSocket.on('connect', function() {
-				console.log("proxy has connected to server");
-				response = "HTTP/1.0 200 OK\r\n\r\n";
-				servers[serverSocket].write(response);
-				serverSocket.setTimeout(0); // disables
-
-				// upon connection, send our data to the server
-				serverSocket.write(data);
-			});
-
-			// if we receive any information back from the server,
-			// shovel back any bytes to our client
-			serverSocket.on('data', function(serverData) {
-				console.log("server data:");
-				console.log(decoder.write(serverData));
-				servers[serverSocket].write(serverData);
-			})
-
-			// connect to host:port defined in HTTP request
-			var host = getRequestHostname(message);
-			var dstHost = host.hostname;
-			// combine the port code inside the getRequestHostName function
-			var dstPort = getRequestPort(message);
-
-			if (host.port) {
-				dstPort = host.port;
-			}
-			var srcHost = "0.0.0.0";
-			var srcPort = 0;  			// bind to any port
-
-			console.log("dst port: " + dstPort);
-			console.log("dst host: " + dstHost);
-			console.log("src port: " + srcPort);
-			console.log("src host: " + srcHost);
-
-			// if you use google's ip: 8.8.8.8 you get unreachable destination
-			serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
-
-			// // comment out and then default option is to throw
-			// // an exception
-			// serverSocket.on("error", function(error) {
-			// 	console.log("connectivity problem: " + error);
-			// })
-
-		}
-
-		//console.log(decoder.write(data));
-	});
 
 	// debug for when client disconnects
 	// Emitted when the other end of the socket sends a FIN packet.
@@ -282,8 +247,19 @@ net.createServer(function(clientSocket) {
 		delete clients[clientSocket];
 	});
 
-
-
 }).listen(SERVER_PORT);
 
-console.log('proxy up on port ' + SERVER_PORT + '\n');
+// helper function to print message with time
+var monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+];
+
+function printTime(message) {
+    var now = new Date();
+    var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
+        timeOutput += now.toLocaleTimeString() + " - ";
+    console.log(timeOutput + message);
+}
+
+printTime('Proxy listening on ' + SERVER_PORT);
+console.log('asdfasdf');

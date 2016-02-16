@@ -60,6 +60,10 @@ function getRequestPort(header) {
 	}
 }
 
+function getRequestMethod(header) {
+	return kthLineOfHeader(header, 0).split(" ")[0];
+}
+
 
 function isHTTPS(header) {
 	uri = kthLineOfHeader(header, 0).split(" ")[1];
@@ -196,8 +200,11 @@ net.createServer(function(clientSocket) {
             // TODO: browser vreceives no indication of receiving response
             serverSocket.on('connect', function () {
                 console.log("proxy has connected to server");
-                const response = "HTTP/1.0 200 OK\r\n\r\n";
-                servers[serverSocket].write(response);
+
+				// we're not supposed to send this upon connecting to the server,
+				// just on an HTTP CONNECT method
+                // const response = "HTTP/1.0 200 OK\r\n\r\n";
+                // servers[serverSocket].write(response);
 
                 // upon connection, send our data to the server
                 clients[clientSocket].setTimeout(0); // disables
@@ -211,10 +218,12 @@ net.createServer(function(clientSocket) {
                 // the reason why simple.txt and simple.html doesn't load because we never close
                 // the connection properly.
                 console.log("server data:");
+				console.log(decoder.write(serverData));
                 // this work except we have could potentially close to early if we need to download
                 // additional files such as css, img...etcgj
                 //servers[serverSocket].end(serverData);
                 servers[serverSocket].write(serverData);
+				// servers[serverSocket].end();
             })
 
             // connect to host:port defined in HTTP request

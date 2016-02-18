@@ -69,7 +69,8 @@ function isHTTPS(header) {
     uri = kthLineOfHeader(header, 0).split(" ")[1];
     // WARNING:might have to be aware when we have ftp
     // and other connections that's not http or https
-    return (uri.toLowerCase().indexOf('https://') === 0);
+
+    return (uri.toLowerCase().indexOf('https://') === 0) || (uri.split(":")[1] === "443");
 }
 
 // returns the type of protocol for this HTTP message (HTTP1_0, HTTP1_1, HTTPS)
@@ -120,13 +121,6 @@ function setConnectionTagClosed(headerLines) {
     }
     return headerLines;
 }
-
-// function serverConnectionFailure(clientSocket, serverSocket) {
-// 	console.log("failed to connect to server");
-// 	response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
-// 	clientSocket.write(response);
-// 	serverSocket.end();
-// }
 
 const SERVER_PORT    = 	parseInt(process.argv[2]);
 
@@ -181,7 +175,7 @@ net.createServer(function(clientSocket) {
 	        initNormalServerSocket(message, data, clientSocket);
     	}
 
-        
+
     });
 
     console.log('remote port ' + clientSocket.remotePort);
@@ -319,9 +313,9 @@ function initTunnelServerSocket(message, data, clientSocket, reconnect) {
         } else {
         	serverSocket = initTunnelServerSocket(message, data, clientSocket, true);
         }
-        
-        
-        
+
+
+
     });
 
     // if we are able to establish a connection with a server,
@@ -336,7 +330,7 @@ function initTunnelServerSocket(message, data, clientSocket, reconnect) {
 			response = "HTTP/1.0 200 OK\r\n\r\n";
         	clientSocket.write(response);
 		}
-        
+
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
         // serverSocket.write(data);
@@ -382,7 +376,7 @@ function initTunnelServerSocket(message, data, clientSocket, reconnect) {
     } else {
     	connectObj = tunnelClientReconnectData[clientSocket];
     }
-    
+
 
     // if you use google's ip: 8.8.8.8 you get unreachable destination
     serverSocket.connect(connectObj);

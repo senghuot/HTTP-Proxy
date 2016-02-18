@@ -143,8 +143,8 @@ if (isNaN(SERVER_PORT)) {
 
 // 2 maps so we can efficiently lookup the corresponding
 // socket in either direction
-// var clients = [];
-// var servers = [];
+var tunnelClients = [];
+var tunnelServers = [];
 
 // establishes connection with the browser
 //TODO: it appears that we're seeing the
@@ -155,89 +155,30 @@ net.createServer(function(clientSocket) {
 
     clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
     clientSocket.on('data', function(data) {
-        var message = decoder.write(data);
-        var HTTP_method = getRequestMethod(message);
+    	if (clientSocket in tunnelClients) {
+    		console.log("tunnel client data:");
+    		serverSocket = tunnelClients[clientSocket];
+    		serverSocket.write(data);
+    	} else {
+    		var message = decoder.write(data);
+	        var HTTP_method = getRequestMethod(message);
 
-        if (HTTP_method == "CONNECT") {
-        	console.log("clientSocket received an HTTP CONNECT");
+	        if (HTTP_method == "CONNECT") {
+	        	console.log("clientSocket received an HTTP CONNECT");
+	        	// attempt to create server facing TCP connection
+	        	initTunnelServerSocket(message, data, clientSocket);
+	        	return;
+	        } else if (HTTP_method == "GET") {
+	        	console.log("clientSocket received an HTTP GET");
+	        }
 
-        	return;
-        } else if (HTTP_method == "GET") {
-        	console.log("clientSocket received an HTTP GET");
-        }
+	        // if this is the first time receiving data from this client,
+	        // establish a connection to the server it wants to communicate
+	        // with and store the clientSocket mappings
+	        initNormalServerSocket(message, data, clientSocket);
+    	}
 
-        // if this is the first time receiving data from this client,
-        // establish a connection to the server it wants to communicate
-        // with and store the clientSocket mappings
-
-        // create a clientSocket to talk to the server, store mappings
-        var serverSocket = new net.Socket();
-        // clients[clientSocket] = serverSocket;
-        // servers[serverSocket] = clientSocket;
-        serverSocket.setTimeout(3000);
-
-        // if connection fails, send back an HTTP 502 Bad Gateway response to the client
-        // TODO: browser doesn't show indication of receiving response
-        serverSocket.on('error', function (errorObj) {
-            console.log("error: " + errorObj);
-            console.log("failed to connect to server");
-            response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
-            //servers[serverSocket].write(response);
-            // delete clients[clientSocket];
-            // delete servers[serverSocket];
-            //serverSocket.end();
-        });
-
-        serverSocket.on('timeout', function () {
-            console.log("failed to connect to server");
-            response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
-            //servers[serverSocket].write(response);
-            // delete clients[clientSocket];
-            // delete servers[serverSocket];
-            //serverSocket.end();
-        })
-
-        // if we are able to establish a connection with a server,
-        // send back a HTTP 200 OK response to the client
-        // TODO: browser vreceives no indication of receiving response
-        serverSocket.on('connect', function () {
-            console.log("proxy has connected to server");
-
-			// we're not supposed to send this upon connecting to the server,
-			// just on an HTTP CONNECT method
-            // const response = "HTTP/1.0 200 OK\r\n\r\n";
-            // servers[serverSocket].write(response);
-
-            // upon connection, send our data to the server
-            serverSocket.setTimeout(0); // disables
-            serverSocket.write(data);
-        });
-
-        // if we receive any information back from the server,
-        // shovel back any bytes to our client
-        serverSocket.on('data', function (serverData) {
-            // TODO: broswer can't tell the different between header and content in serverData.
-            // the reason why simple.txt and simple.html doesn't load because we never close
-            // the connection properly.
-            console.log("server data:");
-			// console.log(decoder.write(serverData));
-            // this work except we have could potentially close to early if we need to download
-            // additional files such as css, img...etcgj
-            //servers[serverSocket].end(serverData);
-            clientSocket.write(serverData);
-			// servers[serverSocket].end();
-        })
-
-        // connect to host:port defined in HTTP request
-        var host = getRequestHostname(message);
-        var dstHost = host.hostname;
-        var dstPort = host.port;
-
-        var srcHost = "0.0.0.0";
-        var srcPort = 0; // bind to any port
-
-        // if you use google's ip: 8.8.8.8 you get unreachable destination
-        serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
+        
     });
 
     console.log('remote port ' + clientSocket.remotePort);
@@ -272,6 +213,131 @@ function printTime(message) {
     var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
     timeOutput += now.toLocaleTimeString() + " - ";
     console.log(timeOutput + message);
+}
+
+function initNormalServerSocket(message, data, clientSocket) {
+	// create a clientSocket to talk to the server, store mappings
+    var serverSocket = new net.Socket();
+    serverSocket.setTimeout(3000);
+
+    serverSocket.on('error', function (errorObj) {
+        console.log("failed to connect to server");
+        console.log("error: " + errorObj);
+    });
+
+    serverSocket.on('timeout', function () {
+        console.log("failed to connect to server: Timeout");
+    })
+
+    serverSocket.on('connect', function () {
+        console.log("proxy has connected to server");
+        // upon connection, send our data to the server
+        serverSocket.setTimeout(0); // disables
+        serverSocket.write(data);
+    });
+
+    // if we receive any information back from the server,
+    // shovel back any bytes to our client
+    serverSocket.on('data', function (serverData) {
+        // TODO: broswer can't tell the different between header and content in serverData.
+        // the reason why simple.txt and simple.html doesn't load because we never close
+        // the connection properly.
+        console.log("server data:");
+		// console.log(decoder.write(serverData));
+        // this work except we have could potentially close to early if we need to download
+        // additional files such as css, img...etcgj
+        //servers[serverSocket].end(serverData);
+        clientSocket.write(serverData);
+		// servers[serverSocket].end();
+    })
+
+    // connect to host:port defined in HTTP request
+    var host = getRequestHostname(message);
+    var dstHost = host.hostname;
+    var dstPort = host.port;
+
+    var srcHost = "0.0.0.0";
+    var srcPort = 0; // bind to any port
+
+    // if you use google's ip: 8.8.8.8 you get unreachable destination
+    serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
+}
+
+function initTunnelServerSocket(message, data, clientSocket) {
+	console.log("init tunnel server socket");
+	// create a clientSocket to talk to the server, store mappings
+    var serverSocket = new net.Socket();
+    // clients[clientSocket] = serverSocket;
+    // servers[serverSocket] = clientSocket;
+    serverSocket.setTimeout(3000);
+
+    tunnelClients[clientSocket] = serverSocket;
+    tunnelServers[serverSocket] = clientSocket;
+
+    // if connection fails, send back an HTTP 502 Bad Gateway response to the client
+    // TODO: browser doesn't show indication of receiving response
+    serverSocket.on('error', function (errorObj) {
+        console.log("failed to connect to tunnel server");
+        console.log("error: " + errorObj);
+        // response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
+        // clientSocket.write(response);
+        // delete tunnelClients[clientSocket];
+        // delete tunnelServers[serverSocket];
+        // serverSocket.end();
+    });
+
+    serverSocket.on('timeout', function () {
+        console.log("failed to connect to tunnel server: Timeout");
+        response = "HTTP/1.0 502 Bad Gateway\r\n\r\n";
+        clientSocket.write(response);
+        delete tunnelClients[clientSocket];
+        delete tunnelServers[serverSocket];
+        serverSocket.end();
+    })
+
+    // if we are able to establish a connection with a server,
+    // send back a HTTP 200 OK response to the client
+    // TODO: browser vreceives no indication of receiving response
+    serverSocket.on('connect', function () {
+        console.log("proxy has connected to server for tunneling");
+
+		// we're not supposed to send this upon connecting to the server,
+		// just on an HTTP CONNECT method
+        response = "HTTP/1.0 200 OK\r\n\r\n";
+        clientSocket.write(response);
+
+        // upon connection, send our data to the server
+        serverSocket.setTimeout(0); // disables
+        // serverSocket.write(data);
+    });
+
+    // if we receive any information back from the server,
+    // shovel back any bytes to our client
+    serverSocket.on('data', function (serverData) {
+        // TODO: broswer can't tell the different between header and content in serverData.
+        // the reason why simple.txt and simple.html doesn't load because we never close
+        // the connection properly.
+        console.log("tunnel server data:");
+		// console.log(decoder.write(serverData));
+        // this work except we have could potentially close to early if we need to download
+        // additional files such as css, img...etcgj
+        //servers[serverSocket].end(serverData);
+        clientSocket.write(serverData);
+		// servers[serverSocket].end();
+    })
+
+    // connect to host:port defined in HTTP request
+    var host = getRequestHostname(message);
+    console.log(host);
+    var dstHost = host.hostname;
+    var dstPort = host.port;
+
+    var srcHost = "0.0.0.0";
+    var srcPort = 0; // bind to any port
+
+    // if you use google's ip: 8.8.8.8 you get unreachable destination
+    serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
+
 }
 
 printTime('Proxy listening on ' + SERVER_PORT);

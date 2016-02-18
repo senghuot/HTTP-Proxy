@@ -6,7 +6,7 @@ var StringDecoder = require("string_decoder").StringDecoder;
 var decoder = new StringDecoder('utf8');
 
 const PROTOCOL = {
-	UNKNOWN: -1,
+    UNKNOWN: -1,
     HTTP1_0: 0,
     HTTP1_1: 1,
 }
@@ -16,7 +16,7 @@ const HTTPS_DEFAULT_PORT = 443;
 
 // helper functions
 function kthLineOfHeader(header, k) {
-	return header.split("\r\n")[k];
+    return header.split("\r\n")[k];
 }
 
 // HTTP 1.1 specifies that a 'Host' tag is required in all HTTP requests,
@@ -24,101 +24,101 @@ function kthLineOfHeader(header, k) {
 // Examines an HTTP 1.1 request header and returns the hostname the message is en route to
 // returns an object: {hostname: "hostname", port: port}
 function getRequestHostname(header) {
-	// QUESTION: is the end always guarenteed to be \r\n?
-	const tags = header.split("\r\n");
-	for (var i = 0; i < tags.length; i++) {
-		// eliminates case sensitivity and white spaces
-		var body = tags[i].toLowerCase().split(" ").join("");
+    // QUESTION: is the end always guarenteed to be \r\n?
+    const tags = header.split("\r\n");
+    for (var i = 0; i < tags.length; i++) {
+        // eliminates case sensitivity and white spaces
+        var body = tags[i].toLowerCase().split(" ").join("");
 
         // look for 'Host' and return the hostname
-		if (body.substring(0, 5) == 'host:') {
-			// ignores host and grabs hostname:ip
-			body = body.substring(5).split(":");
-			var host = {};
+        if (body.substring(0, 5) == 'host:') {
+            // ignores host and grabs hostname:ip
+            body = body.substring(5).split(":");
+            var host = {};
 
-			host.hostname = body[0]
+            host.hostname = body[0]
 
-			// checks if ports were included
-			if (body.length == 2) {
-				host.port = parseInt(body[1]);
+            // checks if ports were included
+            if (body.length == 2) {
+                host.port = parseInt(body[1]);
             } else {
                 host.port = getRequestPort(header);
             }
 
-			return host;
-		}
-	}
+            return host;
+        }
+    }
 }
 
 // Examines an HTTP 1.1 request header and returns the port we should use to
 // establish a connection with the server this message is trying to reach.
 function getRequestPort(header) {
-	if (isHTTPS(kthLineOfHeader(header, 0))) {
-		return HTTPS_DEFAULT_PORT;
-	} else {
-		return HTTP_DEFAULT_PORT;
-	}
+    if (isHTTPS(kthLineOfHeader(header, 0))) {
+        return HTTPS_DEFAULT_PORT;
+    } else {
+        return HTTP_DEFAULT_PORT;
+    }
 }
 
 function getRequestMethod(header) {
-	return kthLineOfHeader(header, 0).split(" ")[0];
+    return kthLineOfHeader(header, 0).split(" ")[0];
 }
 
 
 function isHTTPS(header) {
-	uri = kthLineOfHeader(header, 0).split(" ")[1];
-	// WARNING:might have to be aware when we have ftp
-	// and other connections that's not http or https
-	return (uri.toLowerCase().indexOf('https://') === 0);
+    uri = kthLineOfHeader(header, 0).split(" ")[1];
+    // WARNING:might have to be aware when we have ftp
+    // and other connections that's not http or https
+    return (uri.toLowerCase().indexOf('https://') === 0);
 }
 
 // returns the type of protocol for this HTTP message (HTTP1_0, HTTP1_1, HTTPS)
 function getRequestProtocolType(header) {
-	var versionStr = kthLineOfHeader(header, 0).split(" ")[2];
+    var versionStr = kthLineOfHeader(header, 0).split(" ")[2];
 
-	return versionStr;
+    return versionStr;
 
-	// TODO: is it worth it to have enum values of protocols? or would it
-	// make more sense to handle standardized strings?
-	switch(versionStr) {
-		case "HTTP/1.0":
-			return PROTOCOL.HTTP1_0.value;
+    // TODO: is it worth it to have enum values of protocols? or would it
+    // make more sense to handle standardized strings?
+    switch(versionStr) {
+        case "HTTP/1.0":
+            return PROTOCOL.HTTP1_0.value;
 
-		case "HTTP/1.1":
-			return PROTOCOL.HTTP1_1.value;
+        case "HTTP/1.1":
+            return PROTOCOL.HTTP1_1.value;
 
-		default:
-			return PROTOCOL.UNKNOWN.value;
-	}
+        default:
+            return PROTOCOL.UNKNOWN.value;
+    }
 }
 
 // takes an HTTP header and transforms it into our 'proxy friendly'
 // version so we don't have to deal with framing issues :)
 function transformHTTPHeader(header) {
-	var headerLines = header.split("\r\n");
-	headerLines[0] = setHTTPVersion(headerLines[0], "1.0");
-	headerLines = setConnectionTagClosed(headerLines);
-	return headerLines.join("\r\n").concat("\r\n");
+    var headerLines = header.split("\r\n");
+    headerLines[0] = setHTTPVersion(headerLines[0], "1.0");
+    headerLines = setConnectionTagClosed(headerLines);
+    return headerLines.join("\r\n").concat("\r\n");
 }
 
 function setHTTPVersion(firstLineOfHeader, versionNum) {
-	firstLineSplit = firstLineOfHeader.split(" ");
-	firstLineSplit[2] = "HTTP/" + versionNum;
-	return firstLineSplit.join(" ");
+    firstLineSplit = firstLineOfHeader.split(" ");
+    firstLineSplit[2] = "HTTP/" + versionNum;
+    return firstLineSplit.join(" ");
 }
 
 // Takes an array of Strings, representing the lines representing the
 // lines of an HTTP header, and returns an array of Strings with all 'Connection'
 // and 'Proxy-connection' tags set to 'close'
 function setConnectionTagClosed(headerLines) {
-	for (var i = 0; i < headerLines.length; i++) {
-		if (headerLines[i].startsWith("Connection:")) {
-			headerLines[i] = "Connection: close";
-		} else if (headerLines[i].startsWith("Proxy-connection:")) {
-			headerLines[i] = "Proxy-connection: close";
-		}
-	}
-	return headerLines;
+    for (var i = 0; i < headerLines.length; i++) {
+        if (headerLines[i].startsWith("Connection:")) {
+            headerLines[i] = "Connection: close";
+        } else if (headerLines[i].startsWith("Proxy-connection:")) {
+            headerLines[i] = "Proxy-connection: close";
+        }
+    }
+    return headerLines;
 }
 
 // function serverConnectionFailure(clientSocket, serverSocket) {
@@ -153,7 +153,7 @@ if (isNaN(SERVER_PORT)) {
 // we need a way to differentiate our client facing sockets
 net.createServer(function(clientSocket) {
 
-	clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
+    clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
     clientSocket.on('data', function(data) {
         var message = decoder.write(data);
         var HTTP_method = getRequestMethod(message);
@@ -240,7 +240,7 @@ net.createServer(function(clientSocket) {
         serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
     });
 
-	console.log('remote port ' + clientSocket.remotePort);
+    console.log('remote port ' + clientSocket.remotePort);
 
 	// debug for when client disconnects
 	// Emitted when the other end of the socket sends a FIN packet.
@@ -270,7 +270,7 @@ var monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 function printTime(message) {
     var now = new Date();
     var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
-        timeOutput += now.toLocaleTimeString() + " - ";
+    timeOutput += now.toLocaleTimeString() + " - ";
     console.log(timeOutput + message);
 }
 

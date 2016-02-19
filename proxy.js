@@ -15,7 +15,7 @@ const PROTOCOL = {
 
 const HTTP_DEFAULT_PORT = 80;
 const HTTPS_DEFAULT_PORT = 443;
-const DEBUG = true;
+const DEBUG = false;
 
 function d_print(message) {
     if (DEBUG) {
@@ -132,7 +132,8 @@ function setConnectionTagClosed(headerLines) {
     return headerLines;
 }
 
-const SERVER_PORT    =  parseInt(process.argv[2]);
+const PROXY_PORT = parseInt(process.argv[2]);
+const PROXY_HOST = "0.0.0.0";
 
 // reading input form stdin
 if (process.argv.length != 3) {
@@ -140,7 +141,7 @@ if (process.argv.length != 3) {
     process.exit();
 }
 
-if (isNaN(SERVER_PORT)) {
+if (isNaN(PROXY_PORT)) {
     console.log("Usage: port must be numbers only")
     process.exit();
 }
@@ -158,7 +159,7 @@ var tunnelServers = [];*/
 // we need a way to differentiate our client facing sockets
 net.createServer(function(clientSocket) {
     clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
-    console.log("name of socket " + clientSocket.name);
+    d_print("name of socket " + clientSocket.name);
     clientSocket.on('data', function(data) {
         d_print("RECEIVING DATA");
         if (clientSocket.name in tunnelConnections) {
@@ -170,6 +171,10 @@ net.createServer(function(clientSocket) {
             var message = decoder.write(data);
             var HTTP_method = getRequestMethod(message);
             //message = transformHTTPHeader(message);
+
+            // spec output
+            firstLineOfHeader = kthLineOfHeader(message, 0).split(" ");
+            printTime(">>> " + firstLineOfHeader[0] + " " + firstLineOfHeader[1]);
             
             //d_print("replace Connection");
 
@@ -222,7 +227,7 @@ net.createServer(function(clientSocket) {
         d_print("clientSocket encountered an error: " + errorObj);
     });
 
-}).listen(SERVER_PORT);
+}).listen(PROXY_PORT);
 
 function initTunnelServerSocket(message, data, clientSocket) {    
     var serverSocket = new net.Socket();
@@ -234,7 +239,7 @@ function initTunnelServerSocket(message, data, clientSocket) {
     var dstHost = host.hostname;
     var dstPort = host.port;
 
-    var srcHost = "0.0.0.0";
+    var srcHost = PROXY_HOST;
     var srcPort = 0; // bind to any port
 
     d_print("starting tunnel to: " + dstHost + ":" + dstPort);
@@ -333,7 +338,7 @@ function initNormalServerSocket(message, data, clientSocket) {
     var dstHost = host.hostname;
     var dstPort = host.port;
 
-    var srcHost = "0.0.0.0";
+    var srcHost = PROXY_HOST;
     var srcPort = 0; // bind to any port
 
     // if you use google's ip: 8.8.8.8 you get unreachable destination
@@ -341,4 +346,4 @@ function initNormalServerSocket(message, data, clientSocket) {
 }
 
 
-printTime('Proxy listening on ' + SERVER_PORT);
+printTime('Proxy listening on ' + PROXY_HOST + ':' + PROXY_PORT);

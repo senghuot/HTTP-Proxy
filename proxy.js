@@ -13,6 +13,8 @@ const PROTOCOL = {
     HTTP1_1: 1,
 }
 
+const HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "CONNECT"];
+
 const HTTP_DEFAULT_PORT = 80;
 const HTTPS_DEFAULT_PORT = 443;
 const DEBUG = false;
@@ -169,16 +171,29 @@ net.createServer(function(clientSocket) {
         } else {
             d_print("DATA FROM ");
             var message = decoder.write(data);
-            var HTTP_method = getRequestMethod(message);
             //message = transformHTTPHeader(message);
+
+        	// spec output
+            firstLineOfHeader = kthLineOfHeader(message, 0).split(" ");
+            printTime(">>> " + firstLineOfHeader[0] + " " + firstLineOfHeader[1]);
+
+            var HTTP_method = getRequestMethod(message);
+            if (HTTP_METHODS.indexOf(HTTP_method) < 0) {
+            	// method name doesn't match any in the protocol, so something is wrong.
+            	// close the client, he'll have to try again later
+            	d_print("method was corrupted, so we're not connecting to server");
+            	clientSocket.end();
+            	return;
+            }
 
             // get info for server connection
             var host = getRequestHostname(message);
 		    if (host == undefined) {
 		        d_print("host is undefined, here's the message it came from");
 		        d_print(message);
-		        // host is undefined, so something is wrong. close the client
-		        // he'll have to try again later
+		        // host is undefined, so something is wrong. 
+		        // close the client, he'll have to try again later
+		        d_print("Client hostname was corrupted, so we're not connecting to server");
 		        clientSocket.end();
 		        return;
 		    }
@@ -189,13 +204,6 @@ net.createServer(function(clientSocket) {
 		    var srcPort = 0; // bind to any port
 
 		    connectObj = {port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort};
-
-            // spec output
-            firstLineOfHeader = kthLineOfHeader(message, 0).split(" ");
-            printTime(">>> " + firstLineOfHeader[0] + " " + firstLineOfHeader[1]);
-            
-            //d_print("replace Connection");
-
 
             if (HTTP_method == "CONNECT") {
                 d_print("clientSocket received an HTTP CONNECT");

@@ -197,6 +197,18 @@ net.createServer(function(clientSocket) {
 		        clientSocket.end();
 		        return;
 		    }
+
+            console.log("<before>");
+            console.log(message)
+            console.log("</before>");
+            message = message.replace("Proxy-Connection: keep-alive", "Proxy-Connection: close");
+            message = message.replace("Proxy-connection: keep-alive", "Proxy-connection: close");
+            message = message.replace("Connection: keep-alive", "Connection: close");
+            message = message.replace("HTTP\/1.1", "HTTP\/1.0");
+            console.log("<after>");
+            console.log(message)
+            console.log("</after>");
+
 		    var dstHost = host.hostname;
 		    var dstPort = host.port;
 
@@ -217,7 +229,7 @@ net.createServer(function(clientSocket) {
             // establish a connection to the server it wants to communicate
             // with and store the clientSocket mappings
             //clientSocket.write(new Buffer("data", 'utf-8'));
-            initNormalServerSocket(connectObj, data, clientSocket);
+            initNormalServerSocket(connectObj, message, data, clientSocket);
         //}
         }
 
@@ -303,7 +315,7 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
     return serverSocket;
 }
 
-function initNormalServerSocket(connectObj, data, clientSocket) {
+function initNormalServerSocket(connectObj, message, data, clientSocket) {
     // create a clientSocket to talk to the server, store mappings
     d_print("init normal server socket");
     var serverSocket = new net.Socket();
@@ -322,7 +334,7 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
         d_print("proxy has connected to server");
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
-        serverSocket.write(new Buffer(data, 'utf-8'));
+        serverSocket.write(new Buffer(message));
     });
 
     // if we receive any information back from the server,

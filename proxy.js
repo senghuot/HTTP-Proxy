@@ -172,8 +172,15 @@ net.createServer(function(clientSocket) {
             d_print("DATA FROM ");
             var message = decoder.write(data);
             //message = transformHTTPHeader(message);
+            console.log("before");
+            console.log(message);
+            message = message.replace("Proxy-Connection: keep-alive", "Proxy-Connection: close");
+            message = message.replace("Connection: keep-alive", "Connection: close");
+        	message = message.replace("HTTP/1.1", "HTTP/1.0");
+            console.log("after");
+            console.log(message);
 
-        	// spec output
+            // spec output
             firstLineOfHeader = kthLineOfHeader(message, 0).split(" ");
             printTime(">>> " + firstLineOfHeader[0] + " " + firstLineOfHeader[1]);
 
@@ -217,7 +224,7 @@ net.createServer(function(clientSocket) {
             // establish a connection to the server it wants to communicate
             // with and store the clientSocket mappings
             //clientSocket.write(new Buffer("data", 'utf-8'));
-            initNormalServerSocket(connectObj, data, clientSocket);
+            initNormalServerSocket(connectObj, message, data, clientSocket);
         //}
         }
 
@@ -260,6 +267,13 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
 
     d_print("starting tunnel to: " + connectObj.dstHost + ":" + connectObj.dstPort);
 
+    serverSocket.setTimeout(3 * 1000, function() {
+        console.log("timeout call back")
+        clientSocket.write(new Buffer('HTTP/1.0 502 Bad Gateway \r\n\r\n'));
+        clientSocket.end();
+        serverSocket.end();
+    });
+
     serverSocket.on("data", function(data) {
         if (DEBUG) {
             d_print("TUNNEL SERVER FROM DATA");
@@ -295,6 +309,7 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
     serverSocket.connect(connectObj, function() {
         d_print("connected to the server");
         d_print(clientSocket.name);  
+        serverSocket.setTimeout(0);
         var buf = new Buffer("HTTP/1.0 200 OK \r\n\r\n");
         clientSocket.write(buf);
         tunnelConnections[clientSocket.name] = serverSocket;
@@ -303,7 +318,7 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
     return serverSocket;
 }
 
-function initNormalServerSocket(connectObj, data, clientSocket) {
+function initNormalServerSocket(connectObj, message, data, clientSocket) {
     // create a clientSocket to talk to the server, store mappings
     d_print("init normal server socket");
     var serverSocket = new net.Socket();
@@ -322,7 +337,8 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
         d_print("proxy has connected to server");
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
-        serverSocket.write(new Buffer(data, 'utf-8'));
+        serverSocket.write(new Buffer(message));
+        //serverSocket.write(data);
     });
 
     // if we receive any information back from the server,

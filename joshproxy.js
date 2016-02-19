@@ -168,11 +168,11 @@ net.createServer(function(clientSocket) {
             console.log(data);
             tunnelConnections[clientSocket.name].write(data);
         } else {
-
+            console.log("DATA FROM ");
     		var message = decoder.write(data);
 	        var HTTP_method = getRequestMethod(message);
 	        //console.log("HTTP message data:");
-	        console.log(message);
+	        //console.log(message);
 
             // prevents connections to be kept alive
             

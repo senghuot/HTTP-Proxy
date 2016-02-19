@@ -117,10 +117,10 @@ function setHTTPVersion(firstLineOfHeader, versionNum) {
 function setConnectionTagClosed(headerLines) {
     for (var i = 0; i < headerLines.length; i++) {
         if (headerLines[i].startsWith("Connection:")) {
-            headerLines[i] = "Connection: close\r\n";
+            headerLines[i] = "Connection: close";
         } else if (headerLines[i].startsWith("Proxy-connection:")
                 || headerLines[i].startsWith("Proxy-Connection:")) {
-            headerLines[i] = "Proxy-Connection: close\r\n";
+            headerLines[i] = "Proxy-Connection: close";
         }
     }
     return headerLines;
@@ -156,18 +156,15 @@ net.createServer(function(clientSocket) {
     clientSocket.on('data', function(data) {
         console.log("RECEIVING DATA");
         if (clientSocket.name in tunnelConnections) {
-            if (DEBUG) {
-                console.log("DATA FROM TUNNEL CLIENT");
-                console.log(data);
-            }
+            console.log("DATA FROM TUNNEL CLIENT");
+            console.log(data);
             tunnelConnections[clientSocket.name].write(data);
         } else {
             console.log("DATA FROM ");
     		var message = decoder.write(data);
 	        var HTTP_method = getRequestMethod(message);
-            //console.log(message);
-            //message = transformHTTPHeader("" + message);
-            console.log(message);
+            //message = transformHTTPHeader(message);
+            
             //console.log("replace Connection");
 
 
@@ -204,7 +201,7 @@ net.createServer(function(clientSocket) {
 		console.log(clientSocket.name + " fully closed its connection w/ proxy");
         if (clientSocket.name in tunnelConnections) {
             tunnelConnections[clientSocket.name].end();
-            delete tunnelConnections[clientSocket.name];
+            delete tunnelConnections[clientSocket.name]
         }
 		/*if (tunnelClients[clientSocket] in tunnelServers) {
 			delete tunnelServers[tunnelClients[clientSocket]];

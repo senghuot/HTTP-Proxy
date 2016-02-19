@@ -166,26 +166,31 @@ net.createServer(function(clientSocket) {
         d_print("RECEIVING DATA");
         if (clientSocket.name in tunnelConnections) {
             d_print("DATA FROM TUNNEL CLIENT");
-            d_print(data);
+            //d_print(data);
             tunnelConnections[clientSocket.name].write(data);
         } else {
+            //console.log("list");
+            //console.log(Object.keys(tunnelConnections));
             d_print("DATA FROM ");
             var message = decoder.write(data);
             //message = transformHTTPHeader(message);
-            console.log("before");
+            console.log("<original>");
             console.log(message);
+            console.log("</original>")
             message = message.replace("Proxy-Connection: keep-alive", "Proxy-Connection: close");
             message = message.replace("Connection: keep-alive", "Connection: close");
         	message = message.replace("HTTP/1.1", "HTTP/1.0");
-            console.log("after");
+            /*console.log("<new>");
             console.log(message);
-
+            console.log("</new>");
+            */
             // spec output
             firstLineOfHeader = kthLineOfHeader(message, 0).split(" ");
             printTime(">>> " + firstLineOfHeader[0] + " " + firstLineOfHeader[1]);
 
             var HTTP_method = getRequestMethod(message);
             if (HTTP_METHODS.indexOf(HTTP_method) < 0) {
+                console.log("CORRUPTED");
             	// method name doesn't match any in the protocol, so something is wrong.
             	// close the client, he'll have to try again later
             	d_print("method was corrupted, so we're not connecting to server");
@@ -195,12 +200,11 @@ net.createServer(function(clientSocket) {
 
             // get info for server connection
             var host = getRequestHostname(message);
+            console.log(host);
 		    if (host == undefined) {
+                console.log("UNDEFINED");
 		        d_print("host is undefined, here's the message it came from");
 		        d_print(message);
-		        // host is undefined, so something is wrong. 
-		        // close the client, he'll have to try again later
-		        d_print("Client hostname was corrupted, so we're not connecting to server");
 		        clientSocket.end();
 		        return;
 		    }
@@ -213,18 +217,20 @@ net.createServer(function(clientSocket) {
 		    connectObj = {port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort};
 
             if (HTTP_method == "CONNECT") {
+                console.log("CONNECT");
                 d_print("clientSocket received an HTTP CONNECT");
                 // attempt to create server facing TCP connection
+                console.log("!#!@#!@#!@%$!@%!@#!@$!@%!@$!@$!@$#!@%!@!@^!@$!@$!@#$!@%!@%@!$@!#@!#")
                 initTunnelServerSocket(connectObj, data, clientSocket);
                 return;
             } else if (HTTP_method == "GET") {
                 d_print("clientSocket received an HTTP GET");
             }
+            initNormalServerSocket(connectObj, message, data, clientSocket);
             // if this is the first time receiving data from this client,
             // establish a connection to the server it wants to communicate
             // with and store the clientSocket mappings
             //clientSocket.write(new Buffer("data", 'utf-8'));
-            initNormalServerSocket(connectObj, message, data, clientSocket);
         //}
         }
 
@@ -264,7 +270,7 @@ net.createServer(function(clientSocket) {
 
 function initTunnelServerSocket(connectObj, data, clientSocket) {    
     var serverSocket = new net.Socket();
-
+    console.log("TUNNEL SOCKET at: " + clientSocket.name)
     d_print("starting tunnel to: " + connectObj.dstHost + ":" + connectObj.dstPort);
 
     serverSocket.setTimeout(3 * 1000, function() {
@@ -275,10 +281,8 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
     });
 
     serverSocket.on("data", function(data) {
-        if (DEBUG) {
-            d_print("TUNNEL SERVER FROM DATA");
-            d_print(data);
-        }
+        d_print("TUNNEL SERVER FROM DATA");
+        //d_print(data);
         clientSocket.write(data);
     });
 
@@ -301,11 +305,12 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
         } else {
             d_print("NO PROBLEM");
         }
+
+        delete tunnelConnections[clientSocket.name]
         clientSocket.end();
         d_print("SOCKETED END");
     });
 
-    // can the ip be the problem?
     serverSocket.connect(connectObj, function() {
         d_print("connected to the server");
         d_print(clientSocket.name);  
@@ -320,6 +325,7 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
 
 function initNormalServerSocket(connectObj, message, data, clientSocket) {
     // create a clientSocket to talk to the server, store mappings
+    console.log("NORMAL SOCKET at: " + clientSocket.name);
     d_print("init normal server socket");
     var serverSocket = new net.Socket();
     serverSocket.setTimeout(3000);
@@ -345,6 +351,16 @@ function initNormalServerSocket(connectObj, message, data, clientSocket) {
     // shovel back any bytes to our client
     serverSocket.on('data', function (serverData) {
         //var buf = new Buffer(transformHTTPHeader("" + data));
+        var buf = decoder.write(serverData);
+ /*       console.log("!!!!!!<before server>");
+        console.log(buf); 
+        console.log("!!!!!!</before server>");
+*/
+        //console.log(buf);
+        //buf = buf.replace("Proxy-Connection: keep-alive", "Proxy-Connection: close");
+        //buf = buf.replace("Connection: keep-alive", "Connection: close");
+        //buf = buf.replace("HTTP/1.1", "HTTP/1.0");
+            
         clientSocket.write(serverData);
     })
 

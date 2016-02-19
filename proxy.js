@@ -172,6 +172,24 @@ net.createServer(function(clientSocket) {
             var HTTP_method = getRequestMethod(message);
             //message = transformHTTPHeader(message);
 
+            // get info for server connection
+            var host = getRequestHostname(message);
+		    if (host == undefined) {
+		        d_print("host is undefined, here's the message it came from");
+		        d_print(message);
+		        // host is undefined, so something is wrong. close the client
+		        // he'll have to try again later
+		        clientSocket.end();
+		        return;
+		    }
+		    var dstHost = host.hostname;
+		    var dstPort = host.port;
+
+		    var srcHost = PROXY_HOST;
+		    var srcPort = 0; // bind to any port
+
+		    connectObj = {port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort};
+
             // spec output
             firstLineOfHeader = kthLineOfHeader(message, 0).split(" ");
             printTime(">>> " + firstLineOfHeader[0] + " " + firstLineOfHeader[1]);
@@ -182,7 +200,7 @@ net.createServer(function(clientSocket) {
             if (HTTP_method == "CONNECT") {
                 d_print("clientSocket received an HTTP CONNECT");
                 // attempt to create server facing TCP connection
-                initTunnelServerSocket(message, data, clientSocket);
+                initTunnelServerSocket(connectObj, data, clientSocket);
                 return;
             } else if (HTTP_method == "GET") {
                 d_print("clientSocket received an HTTP GET");
@@ -191,7 +209,7 @@ net.createServer(function(clientSocket) {
             // establish a connection to the server it wants to communicate
             // with and store the clientSocket mappings
             //clientSocket.write(new Buffer("data", 'utf-8'));
-            initNormalServerSocket(message, data, clientSocket);
+            initNormalServerSocket(connectObj, data, clientSocket);
         //}
         }
 
@@ -229,28 +247,10 @@ net.createServer(function(clientSocket) {
 
 }).listen(PROXY_PORT);
 
-function initTunnelServerSocket(message, data, clientSocket) {    
+function initTunnelServerSocket(connectObj, data, clientSocket) {    
     var serverSocket = new net.Socket();
-    var host = getRequestHostname(message);
-    if (host == undefined) {
-        d_print("host is undefined, here's the message it came from");
-        d_print(message);
-    }
-    var dstHost = host.hostname;
-    var dstPort = host.port;
 
-    var srcHost = PROXY_HOST;
-    var srcPort = 0; // bind to any port
-
-    d_print("starting tunnel to: " + dstHost + ":" + dstPort);
-    // can the ip be the problem?
-    serverSocket.connect({port: dstPort, host: dstHost}, function() {
-        d_print("connected to the server");
-        d_print(clientSocket.name);  
-        var buf = new Buffer("HTTP/1.0 200 OK \r\n\r\n");
-        clientSocket.write(buf);
-        tunnelConnections[clientSocket.name] = serverSocket;
-    });
+    d_print("starting tunnel to: " + connectObj.dstHost + ":" + connectObj.dstPort);
 
     serverSocket.on("data", function(data) {
         if (DEBUG) {
@@ -283,24 +283,19 @@ function initTunnelServerSocket(message, data, clientSocket) {
         d_print("SOCKETED END");
     });
 
+    // can the ip be the problem?
+    serverSocket.connect(connectObj, function() {
+        d_print("connected to the server");
+        d_print(clientSocket.name);  
+        var buf = new Buffer("HTTP/1.0 200 OK \r\n\r\n");
+        clientSocket.write(buf);
+        tunnelConnections[clientSocket.name] = serverSocket;
+    });
 
     return serverSocket;
 }
 
-
-// helper function to print message with time
-var monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-];
-
-function printTime(message) {
-    var now = new Date();
-    var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
-    timeOutput += now.toLocaleTimeString() + " - ";
-    console.log(timeOutput + message);
-}
-
-function initNormalServerSocket(message, data, clientSocket) {
+function initNormalServerSocket(connectObj, data, clientSocket) {
     // create a clientSocket to talk to the server, store mappings
     d_print("init normal server socket");
     var serverSocket = new net.Socket();
@@ -319,7 +314,7 @@ function initNormalServerSocket(message, data, clientSocket) {
         d_print("proxy has connected to server");
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
-        serverSocket.write(new Buffer(message, 'utf-8'));
+        serverSocket.write(new Buffer(data, 'utf-8'));
     });
 
     // if we receive any information back from the server,
@@ -329,21 +324,22 @@ function initNormalServerSocket(message, data, clientSocket) {
         clientSocket.write(serverData);
     })
 
-    // connect to host:port defined in HTTP request
-    var host = getRequestHostname(message);
-    if (host == undefined) {
-        d_print("host is undefined, here's the message it came from");
-        d_print(message);
-    }
-    var dstHost = host.hostname;
-    var dstPort = host.port;
-
-    var srcHost = PROXY_HOST;
-    var srcPort = 0; // bind to any port
 
     // if you use google's ip: 8.8.8.8 you get unreachable destination
-    serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
+    serverSocket.connect(connectObj);
 }
 
+
+// helper function to print message with time
+var monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+];
+
+function printTime(message) {
+    var now = new Date();
+    var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
+    timeOutput += now.toLocaleTimeString() + " - ";
+    console.log(timeOutput + message);
+}
 
 printTime('Proxy listening on ' + PROXY_HOST + ':' + PROXY_PORT);

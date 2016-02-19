@@ -15,6 +15,7 @@ const PROTOCOL = {
 
 const HTTP_DEFAULT_PORT = 80;
 const HTTPS_DEFAULT_PORT = 443;
+const DEBUG = true;
 
 // helper functions
 function kthLineOfHeader(header, k) {
@@ -116,9 +117,10 @@ function setHTTPVersion(firstLineOfHeader, versionNum) {
 function setConnectionTagClosed(headerLines) {
     for (var i = 0; i < headerLines.length; i++) {
         if (headerLines[i].startsWith("Connection:")) {
-            headerLines[i] = "Connection: close";
-        } else if (headerLines[i].startsWith("Proxy-connection:")) {
-            headerLines[i] = "Proxy-connection: close";
+            headerLines[i] = "Connection: close\r\n";
+        } else if (headerLines[i].startsWith("Proxy-connection:")
+                || headerLines[i].startsWith("Proxy-Connection:")) {
+            headerLines[i] = "Proxy-Connection: close\r\n";
         }
     }
     return headerLines;
@@ -153,36 +155,19 @@ net.createServer(function(clientSocket) {
     console.log("name of socket " + clientSocket.name);
     clientSocket.on('data', function(data) {
         console.log("RECEIVING DATA");
-    	/*if (clientSocket in tunnelClients) {
-    		console.log("tunnel client data:");
-            //console.log(decoder.write(data));
-            message = decoder.write(data);
-            //message = message.replace("Proxy-Connection: keep-alive", "Proxy-Connection: close");
-            //message = message.replace("Connection: keep-alive", "Connection: close");
-    		serverSocket = tunnelClients[clientSocket];
-    		//serverSocket.write(new Buffer(message, 'utf-8'));
-            serverSocket.write(data);
-    	} else {*/
         if (clientSocket.name in tunnelConnections) {
-            console.log("DATA FROM TUNNEL CLIENT");
-            console.log(data);
+            if (DEBUG) {
+                console.log("DATA FROM TUNNEL CLIENT");
+                console.log(data);
+            }
             tunnelConnections[clientSocket.name].write(data);
         } else {
             console.log("DATA FROM ");
     		var message = decoder.write(data);
 	        var HTTP_method = getRequestMethod(message);
-	        //console.log("HTTP message data:");
-	        //console.log(message);
-
-            // prevents connections to be kept alive
-            
-            // TODO hacky way, check for case sensativity later
-            message = message.replace("Proxy-Connection: keep-alive", "Proxy-Connection: close");
-            //console.log("replace Proxy");
             //console.log(message);
-
-            message = message.replace("Connection: keep-alive", "Connection: close");
-
+            //message = transformHTTPHeader("" + message);
+            console.log(message);
             //console.log("replace Connection");
 
 
@@ -217,7 +202,10 @@ net.createServer(function(clientSocket) {
 	clientSocket.on('close', function(had_error) {
 		// clients.splice(clients.indexOf(clientSocket), 1);
 		console.log(clientSocket.name + " fully closed its connection w/ proxy");
-
+        if (clientSocket.name in tunnelConnections) {
+            tunnelConnections[clientSocket.name].end();
+            delete tunnelConnections[clientSocket.name];
+        }
 		/*if (tunnelClients[clientSocket] in tunnelServers) {
 			delete tunnelServers[tunnelClients[clientSocket]];
 			tunnelClients[clientSocket].end();
@@ -252,17 +240,41 @@ function initTunnelServerSocket(message, data, clientSocket) {
         console.log("connected to the server");
         console.log(clientSocket.name);  
         var buf = new Buffer("HTTP/1.0 200 OK \r\n\r\n");
-        //console.log("the buff ");
-        //console.log(str);
         clientSocket.write(buf);
         tunnelConnections[clientSocket.name] = serverSocket;
     });
 
     serverSocket.on("data", function(data) {
-        console.log("TUNNEL SERVER FROM DATA");
-        console.log(data);
+        if (DEBUG) {
+            console.log("TUNNEL SERVER FROM DATA");
+            console.log(data);
+        }
         clientSocket.write(data);
     });
+
+    serverSocket.on("error", function(error) {
+        console.log("TUNNEL SERVER ERROR");
+        console.log(error);
+    });
+
+    // Have to end the server manually if we
+    // override
+    serverSocket.on("end", function() {
+        console.log("SOCKETED END");
+    });
+
+    serverSocket.on("close", function(has_error) {
+        console.log("SOCKET CLOSE")
+        if (has_error) {
+            console.log("HAS ERROR");
+            clientSocket.write(new Buffer('HTTP/1.0 502 Bad Gateway \r\n\r\n'));
+        } else {
+            console.log("NO PROBLEM");
+        }
+        clientSocket.end();
+        console.log("SOCKETED END");
+    });
+
 
     return serverSocket;
 }
@@ -299,26 +311,14 @@ function initNormalServerSocket(message, data, clientSocket) {
         console.log("proxy has connected to server");
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
-        //serverSocket.write(data);
-        //console.log("message!!!!");
-        //console.log("message!!!!!!: " + message);
-        //console.log("data!!!!!! " + data);
         serverSocket.write(new Buffer(message, 'utf-8'));
     });
 
     // if we receive any information back from the server,
     // shovel back any bytes to our client
     serverSocket.on('data', function (serverData) {
-        // TODO: broswer can't tell the different between header and content in serverData.
-        // the reason why simple.txt and simple.html doesn't load because we never close
-        // the connection properly.
-        //console.log("server data:");
-		// console.log(decoder.write(serverData));
-        // this work except we have could potentially close to early if we need to download
-        // additional files such as css, img...etcgj
-        //servers[serverSocket].end(serverData);
+        //var buf = new Buffer(transformHTTPHeader("" + data));
         clientSocket.write(serverData);
-		// servers[serverSocket].end();
     })
 
     // connect to host:port defined in HTTP request

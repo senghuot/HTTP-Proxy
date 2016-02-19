@@ -292,7 +292,7 @@ function printTime(message) {
     var now = new Date();
     var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
     timeOutput += now.toLocaleTimeString() + " - ";
-    d_print(timeOutput + message);
+    console.log(timeOutput + message);
 }
 
 function initNormalServerSocket(message, data, clientSocket) {

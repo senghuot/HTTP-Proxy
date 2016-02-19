@@ -17,6 +17,12 @@ const HTTP_DEFAULT_PORT = 80;
 const HTTPS_DEFAULT_PORT = 443;
 const DEBUG = true;
 
+function d_print(message) {
+    if (DEBUG) {
+        console.log(message);
+    }
+}
+
 // helper functions
 function kthLineOfHeader(header, k) {
     return header.split("\r\n")[k];
@@ -154,27 +160,27 @@ net.createServer(function(clientSocket) {
     clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
     console.log("name of socket " + clientSocket.name);
     clientSocket.on('data', function(data) {
-        console.log("RECEIVING DATA");
+        d_print("RECEIVING DATA");
         if (clientSocket.name in tunnelConnections) {
-            console.log("DATA FROM TUNNEL CLIENT");
-            console.log(data);
+            d_print("DATA FROM TUNNEL CLIENT");
+            d_print(data);
             tunnelConnections[clientSocket.name].write(data);
         } else {
-            console.log("DATA FROM ");
+            d_print("DATA FROM ");
     		var message = decoder.write(data);
 	        var HTTP_method = getRequestMethod(message);
             //message = transformHTTPHeader(message);
             
-            //console.log("replace Connection");
+            //d_print("replace Connection");
 
 
 	        if (HTTP_method == "CONNECT") {
-	        	console.log("clientSocket received an HTTP CONNECT");
+	        	d_print("clientSocket received an HTTP CONNECT");
 	        	// attempt to create server facing TCP connection
 	        	initTunnelServerSocket(message, data, clientSocket);
 	        	return;
 	        } else if (HTTP_method == "GET") {
-	        	console.log("clientSocket received an HTTP GET");
+	        	d_print("clientSocket received an HTTP GET");
 	        }
 	        // if this is the first time receiving data from this client,
 	        // establish a connection to the server it wants to communicate
@@ -187,18 +193,18 @@ net.createServer(function(clientSocket) {
 
     });
 
-    console.log('remote port ' + clientSocket.remotePort);
+    d_print('remote port ' + clientSocket.remotePort);
 
 	// debug for when client disconnects
 	// Emitted when the other end of the socket sends a FIN packet.
 	clientSocket.on('end', function() {
-		console.log(clientSocket.name + " sent a FIN packet.");
+		d_print(clientSocket.name + " sent a FIN packet.");
 	});
 
 	// Emitted once the socket is fully closed
 	clientSocket.on('close', function(had_error) {
 		// clients.splice(clients.indexOf(clientSocket), 1);
-		console.log(clientSocket.name + " fully closed its connection w/ proxy");
+		d_print(clientSocket.name + " fully closed its connection w/ proxy");
         if (clientSocket.name in tunnelConnections) {
             tunnelConnections[clientSocket.name].end();
             delete tunnelConnections[clientSocket.name]
@@ -213,7 +219,7 @@ net.createServer(function(clientSocket) {
 	});
 
 	clientSocket.on('error', function(errorObj) {
-		console.log("clientSocket encountered an error: " + errorObj);
+		d_print("clientSocket encountered an error: " + errorObj);
 	});
 
 }).listen(SERVER_PORT);
@@ -222,8 +228,8 @@ function initTunnelServerSocket(message, data, clientSocket) {
     var serverSocket = new net.Socket();
     var host = getRequestHostname(message);
     if (host == undefined) {
-        console.log("host is undefined, here's the message it came from");
-        console.log(message);
+        d_print("host is undefined, here's the message it came from");
+        d_print(message);
     }
     var dstHost = host.hostname;
     var dstPort = host.port;
@@ -231,11 +237,11 @@ function initTunnelServerSocket(message, data, clientSocket) {
     var srcHost = "0.0.0.0";
     var srcPort = 0; // bind to any port
 
-    console.log("starting tunnel to: " + dstHost + ":" + dstPort);
+    d_print("starting tunnel to: " + dstHost + ":" + dstPort);
     // can the ip be the problem?
     serverSocket.connect({port: dstPort, host: dstHost}, function() {
-        console.log("connected to the server");
-        console.log(clientSocket.name);  
+        d_print("connected to the server");
+        d_print(clientSocket.name);  
         var buf = new Buffer("HTTP/1.0 200 OK \r\n\r\n");
         clientSocket.write(buf);
         tunnelConnections[clientSocket.name] = serverSocket;
@@ -243,33 +249,33 @@ function initTunnelServerSocket(message, data, clientSocket) {
 
     serverSocket.on("data", function(data) {
         if (DEBUG) {
-            console.log("TUNNEL SERVER FROM DATA");
-            console.log(data);
+            d_print("TUNNEL SERVER FROM DATA");
+            d_print(data);
         }
         clientSocket.write(data);
     });
 
     serverSocket.on("error", function(error) {
-        console.log("TUNNEL SERVER ERROR");
-        console.log(error);
+        d_print("TUNNEL SERVER ERROR");
+        d_print(error);
     });
 
     // Have to end the server manually if we
     // override
     serverSocket.on("end", function() {
-        console.log("SOCKETED END");
+        d_print("SOCKETED END");
     });
 
     serverSocket.on("close", function(has_error) {
-        console.log("SOCKET CLOSE")
+        d_print("SOCKET CLOSE")
         if (has_error) {
-            console.log("HAS ERROR");
+            d_print("HAS ERROR");
             clientSocket.write(new Buffer('HTTP/1.0 502 Bad Gateway \r\n\r\n'));
         } else {
-            console.log("NO PROBLEM");
+            d_print("NO PROBLEM");
         }
         clientSocket.end();
-        console.log("SOCKETED END");
+        d_print("SOCKETED END");
     });
 
 
@@ -286,26 +292,26 @@ function printTime(message) {
     var now = new Date();
     var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
     timeOutput += now.toLocaleTimeString() + " - ";
-    console.log(timeOutput + message);
+    d_print(timeOutput + message);
 }
 
 function initNormalServerSocket(message, data, clientSocket) {
 	// create a clientSocket to talk to the server, store mappings
-	console.log("init normal server socket");
+	d_print("init normal server socket");
     var serverSocket = new net.Socket();
     serverSocket.setTimeout(3000);
 
     serverSocket.on('error', function (errorObj) {
-        console.log("failed to connect to server");
-        console.log(errorObj);
+        d_print("failed to connect to server");
+        d_print(errorObj);
     });
 
     serverSocket.on('timeout', function () {
-        console.log("failed to connect to server: Timeout");
+        d_print("failed to connect to server: Timeout");
     })
 
     serverSocket.on('connect', function () {
-        console.log("proxy has connected to server");
+        d_print("proxy has connected to server");
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
         serverSocket.write(new Buffer(message, 'utf-8'));
@@ -321,8 +327,8 @@ function initNormalServerSocket(message, data, clientSocket) {
     // connect to host:port defined in HTTP request
     var host = getRequestHostname(message);
     if (host == undefined) {
-    	console.log("host is undefined, here's the message it came from");
-    	console.log(message);
+    	d_print("host is undefined, here's the message it came from");
+    	d_print(message);
     }
     var dstHost = host.hostname;
     var dstPort = host.port;

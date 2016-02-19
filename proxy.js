@@ -148,17 +148,7 @@ if (isNaN(PROXY_PORT)) {
     process.exit();
 }
 
-// 2 maps so we can efficiently lookup the corresponding
-// socket in either direction
-/*var tunnelClients = [];
-var tunnelClientReconnectData = [];
-var tunnelServers = [];*/
-
-// establishes connection with the browser
-//TODO: it appears that we're seeing the
-// same TCP socket for every connection from the browser
-// If we want to distinguish between different tabs, or closing and opening tabs,
-// we need a way to differentiate our client facing sockets
+// create a proxy server for clients to connect with
 net.createServer(function(clientSocket) {
     clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
     d_print("name of socket " + clientSocket.name);
@@ -197,6 +187,8 @@ net.createServer(function(clientSocket) {
 		        clientSocket.end();
 		        return;
 		    }
+
+
 		    var dstHost = host.hostname;
 		    var dstPort = host.port;
 
@@ -322,7 +314,18 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
         d_print("proxy has connected to server");
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
-        serverSocket.write(new Buffer(data, 'utf-8'));
+        
+        // change from HTTP/1.0 and Connection close
+        var header = decoder.write(data);
+        //console.log("before");
+        //console.log(header);
+        header = header.replace("HTTP/1.1", "HTTP/1.0");
+        header = header.replace("keep-alive", "close");
+        // for two keep-alive
+        header = header.replace("keep-alive", "close");
+        //console.log("after");
+        //console.log(header);
+        serverSocket.write(new Buffer(header, 'utf-8'));
     });
 
     // if we receive any information back from the server,

@@ -1,9 +1,11 @@
-var net		= require('net');
+var net     = require('net');
 var message = require('./message');
 
 // used to read buffer and convert to string
 var StringDecoder = require("string_decoder").StringDecoder;
 var decoder = new StringDecoder('utf8');
+
+var tunnelConnections = {};
 
 const PROTOCOL = {
     UNKNOWN: -1,
@@ -13,6 +15,13 @@ const PROTOCOL = {
 
 const HTTP_DEFAULT_PORT = 80;
 const HTTPS_DEFAULT_PORT = 443;
+const DEBUG = true;
+
+function d_print(message) {
+    if (DEBUG) {
+        console.log(message);
+    }
+}
 
 // helper functions
 function kthLineOfHeader(header, k) {
@@ -115,14 +124,15 @@ function setConnectionTagClosed(headerLines) {
     for (var i = 0; i < headerLines.length; i++) {
         if (headerLines[i].startsWith("Connection:")) {
             headerLines[i] = "Connection: close";
-        } else if (headerLines[i].startsWith("Proxy-connection:")) {
-            headerLines[i] = "Proxy-connection: close";
+        } else if (headerLines[i].startsWith("Proxy-connection:")
+                || headerLines[i].startsWith("Proxy-Connection:")) {
+            headerLines[i] = "Proxy-Connection: close";
         }
     }
     return headerLines;
 }
 
-const SERVER_PORT    = 	parseInt(process.argv[2]);
+const SERVER_PORT    =  parseInt(process.argv[2]);
 
 // reading input form stdin
 if (process.argv.length != 3) {
@@ -137,9 +147,9 @@ if (isNaN(SERVER_PORT)) {
 
 // 2 maps so we can efficiently lookup the corresponding
 // socket in either direction
-var tunnelClients = [];
+/*var tunnelClients = [];
 var tunnelClientReconnectData = [];
-var tunnelServers = [];
+var tunnelServers = [];*/
 
 // establishes connection with the browser
 //TODO: it appears that we're seeing the
@@ -147,80 +157,131 @@ var tunnelServers = [];
 // If we want to distinguish between different tabs, or closing and opening tabs,
 // we need a way to differentiate our client facing sockets
 net.createServer(function(clientSocket) {
-
     clientSocket.name = clientSocket.remoteAddress + ":" + clientSocket.remotePort;
+    console.log("name of socket " + clientSocket.name);
     clientSocket.on('data', function(data) {
-        console.log("received data");
-    	if (clientSocket in tunnelClients) {
-    		console.log("tunnel client data:");
-            //console.log(decoder.write(data));
-            message = decoder.write(data);
-    		serverSocket = tunnelClients[clientSocket];
-    		//serverSocket.write(new Buffer(message, 'utf-8'));
-            serverSocket.write(data);
-    	} else {
-    		var message = decoder.write(data);
-	        var HTTP_method = getRequestMethod(message);
-	        console.log("HTTP message data:");
-	        console.log(message);
-
-            // prevents connections to be kept alive
+        d_print("RECEIVING DATA");
+        if (clientSocket.name in tunnelConnections) {
+            d_print("DATA FROM TUNNEL CLIENT");
+            d_print(data);
+            tunnelConnections[clientSocket.name].write(data);
+        } else {
+            d_print("DATA FROM ");
+            var message = decoder.write(data);
+            var HTTP_method = getRequestMethod(message);
+            //message = transformHTTPHeader(message);
             
-            // TODO hacky way, check for case sensativity later
-            message = message.replace("Proxy-Connection: keep-alive", "Proxy-Connection: close");
-            //console.log("replace Proxy");
-            //console.log(message);
-
-            message = message.replace("Connection: keep-alive", "Connection: close");
-
-            //console.log("replace Connection");
+            //d_print("replace Connection");
 
 
-	        if (HTTP_method == "CONNECT") {
-	        	console.log("clientSocket received an HTTP CONNECT");
-	        	// attempt to create server facing TCP connection
-	        	initTunnelServerSocket(message, data, clientSocket, false);
-	        	return;
-	        } else if (HTTP_method == "GET") {
-	        	console.log("clientSocket received an HTTP GET");
-	        }
-	        // if this is the first time receiving data from this client,
-	        // establish a connection to the server it wants to communicate
-	        // with and store the clientSocket mappings
+            if (HTTP_method == "CONNECT") {
+                d_print("clientSocket received an HTTP CONNECT");
+                // attempt to create server facing TCP connection
+                initTunnelServerSocket(message, data, clientSocket);
+                return;
+            } else if (HTTP_method == "GET") {
+                d_print("clientSocket received an HTTP GET");
+            }
+            // if this is the first time receiving data from this client,
+            // establish a connection to the server it wants to communicate
+            // with and store the clientSocket mappings
             //clientSocket.write(new Buffer("data", 'utf-8'));
-	        initNormalServerSocket(message, data, clientSocket);
-    	}
+            initNormalServerSocket(message, data, clientSocket);
+        //}
+        }
 
 
     });
 
-    console.log('remote port ' + clientSocket.remotePort);
+    d_print('remote port ' + clientSocket.remotePort);
 
-	// debug for when client disconnects
-	// Emitted when the other end of the socket sends a FIN packet.
-	clientSocket.on('end', function() {
-		console.log(clientSocket.name + " sent a FIN packet.");
-	});
+    // debug for when client disconnects
+    // Emitted when the other end of the socket sends a FIN packet.
+    clientSocket.on('end', function() {
+        d_print(clientSocket.name + " sent a FIN packet.");
+    });
 
-	// Emitted once the socket is fully closed
-	clientSocket.on('close', function(had_error) {
-		// clients.splice(clients.indexOf(clientSocket), 1);
-		console.log(clientSocket.name + " fully closed its connection w/ proxy");
+    // Emitted once the socket is fully closed
+    clientSocket.on('close', function(had_error) {
+        // clients.splice(clients.indexOf(clientSocket), 1);
+        d_print(clientSocket.name + " fully closed its connection w/ proxy");
+        if (clientSocket.name in tunnelConnections) {
+            tunnelConnections[clientSocket.name].end();
+            delete tunnelConnections[clientSocket.name]
+        }
+        /*if (tunnelClients[clientSocket] in tunnelServers) {
+            delete tunnelServers[tunnelClients[clientSocket]];
+            tunnelClients[clientSocket].end();
+        }
+        if (clientSocket in tunnelClients) {
+            delete tunnelClients[clientSocket];
+        }*/
+    });
 
-		if (tunnelClients[clientSocket] in tunnelServers) {
-			delete tunnelServers[tunnelClients[clientSocket]];
-			tunnelClients[clientSocket].end();
-		}
-		if (clientSocket in tunnelClients) {
-			delete tunnelClients[clientSocket];
-		}
-	});
-
-	clientSocket.on('error', function(errorObj) {
-		console.log("clientSocket encountered an error: " + errorObj);
-	});
+    clientSocket.on('error', function(errorObj) {
+        d_print("clientSocket encountered an error: " + errorObj);
+    });
 
 }).listen(SERVER_PORT);
+
+function initTunnelServerSocket(message, data, clientSocket) {    
+    var serverSocket = new net.Socket();
+    var host = getRequestHostname(message);
+    if (host == undefined) {
+        d_print("host is undefined, here's the message it came from");
+        d_print(message);
+    }
+    var dstHost = host.hostname;
+    var dstPort = host.port;
+
+    var srcHost = "0.0.0.0";
+    var srcPort = 0; // bind to any port
+
+    d_print("starting tunnel to: " + dstHost + ":" + dstPort);
+    // can the ip be the problem?
+    serverSocket.connect({port: dstPort, host: dstHost}, function() {
+        d_print("connected to the server");
+        d_print(clientSocket.name);  
+        var buf = new Buffer("HTTP/1.0 200 OK \r\n\r\n");
+        clientSocket.write(buf);
+        tunnelConnections[clientSocket.name] = serverSocket;
+    });
+
+    serverSocket.on("data", function(data) {
+        if (DEBUG) {
+            d_print("TUNNEL SERVER FROM DATA");
+            d_print(data);
+        }
+        clientSocket.write(data);
+    });
+
+    serverSocket.on("error", function(error) {
+        d_print("TUNNEL SERVER ERROR");
+        d_print(error);
+    });
+
+    // Have to end the server manually if we
+    // override
+    serverSocket.on("end", function() {
+        d_print("SOCKETED END");
+    });
+
+    serverSocket.on("close", function(has_error) {
+        d_print("SOCKET CLOSE")
+        if (has_error) {
+            d_print("HAS ERROR");
+            clientSocket.write(new Buffer('HTTP/1.0 502 Bad Gateway \r\n\r\n'));
+        } else {
+            d_print("NO PROBLEM");
+        }
+        clientSocket.end();
+        d_print("SOCKETED END");
+    });
+
+
+    return serverSocket;
+}
+
 
 // helper function to print message with time
 var monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -231,55 +292,43 @@ function printTime(message) {
     var now = new Date();
     var timeOutput = now.getDate() + " " + monthNames[now.getMonth()] + " ";
     timeOutput += now.toLocaleTimeString() + " - ";
-    console.log(timeOutput + message);
+    d_print(timeOutput + message);
 }
 
 function initNormalServerSocket(message, data, clientSocket) {
-	// create a clientSocket to talk to the server, store mappings
-	console.log("init normal server socket");
+    // create a clientSocket to talk to the server, store mappings
+    d_print("init normal server socket");
     var serverSocket = new net.Socket();
     serverSocket.setTimeout(3000);
 
     serverSocket.on('error', function (errorObj) {
-        console.log("failed to connect to server");
-        console.log(errorObj);
+        d_print("failed to connect to server");
+        d_print(errorObj);
     });
 
     serverSocket.on('timeout', function () {
-        console.log("failed to connect to server: Timeout");
+        d_print("failed to connect to server: Timeout");
     })
 
     serverSocket.on('connect', function () {
-        console.log("proxy has connected to server");
+        d_print("proxy has connected to server");
         // upon connection, send our data to the server
         serverSocket.setTimeout(0); // disables
-        //serverSocket.write(data);
-        //console.log("message!!!!");
-        //console.log("message!!!!!!: " + message);
-        //console.log("data!!!!!! " + data);
         serverSocket.write(new Buffer(message, 'utf-8'));
     });
 
     // if we receive any information back from the server,
     // shovel back any bytes to our client
     serverSocket.on('data', function (serverData) {
-        // TODO: broswer can't tell the different between header and content in serverData.
-        // the reason why simple.txt and simple.html doesn't load because we never close
-        // the connection properly.
-        //console.log("server data:");
-		// console.log(decoder.write(serverData));
-        // this work except we have could potentially close to early if we need to download
-        // additional files such as css, img...etcgj
-        //servers[serverSocket].end(serverData);
+        //var buf = new Buffer(transformHTTPHeader("" + data));
         clientSocket.write(serverData);
-		// servers[serverSocket].end();
     })
 
     // connect to host:port defined in HTTP request
     var host = getRequestHostname(message);
     if (host == undefined) {
-    	console.log("host is undefined, here's the message it came from");
-    	console.log(message);
+        d_print("host is undefined, here's the message it came from");
+        d_print(message);
     }
     var dstHost = host.hostname;
     var dstPort = host.port;
@@ -291,121 +340,5 @@ function initNormalServerSocket(message, data, clientSocket) {
     serverSocket.connect({port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort});
 }
 
-function initTunnelServerSocket(message, data, clientSocket, reconnect) {
-	console.log("init tunnel server socket");
-	// create a clientSocket to talk to the server, store mappings
-    var serverSocket = new net.Socket();
-    // clients[clientSocket] = serverSocket;
-    // servers[serverSocket] = clientSocket;
-    serverSocket.setTimeout(3000);
-
-    tunnelClients[clientSocket] = serverSocket;
-    tunnelServers[serverSocket] = clientSocket;
-
-    // if connection fails, send back an HTTP 502 Bad Gateway response to the client
-    // TODO: browser doesn't show indication of receiving response
-    serverSocket.on('error', function (errorObj) {
-        console.log("failed to connect to tunnel server");
-        console.log(errorObj);
-
-        delete tunnelClients[clientSocket];
-        delete tunnelServers[serverSocket];
-        serverSocket.end();
-
-        if (!reconnect) {
-        	response = "HTTP/1.0 502 Bad Gateway\r\n";
-        	clientSocket.write(new Buffer(response));
-        } else {
-        	serverSocket = initTunnelServerSocket(message, data, clientSocket, true);
-        }
-    });
-
-    serverSocket.on('timeout', function () {
-        console.log("failed to connect to tunnel server: Timeout");
-        delete tunnelClients[clientSocket];
-        delete tunnelServers[serverSocket];
-        serverSocket.end();
-
-        if (!reconnect) {
-        	response = "HTTP/1.0 502 Bad Gateway\r\n";
-        	clientSocket.write(new Buffer(response));
-        } else {
-        	serverSocket = initTunnelServerSocket(message, data, clientSocket, true);
-        }
-    });
-
-    // if we are able to establish a connection with a server,
-    // send back a HTTP 200 OK response to the client
-    // TODO: browser vreceives no indication of receiving response
-    serverSocket.on('connect', function () {
-        console.log("proxy has connected to server for tunneling");
-
-		// we're not supposed to send this upon connecting to the server,
-		// just on an HTTP CONNECT method
-		if (!reconnect) {
-            console.log("send to the client okay");
-			response = "HTTP/1.0 200 OK\r\n\r\n";
-        	clientSocket.write(new Buffer(response));
-		}
-
-        // upon connection, send our data to the server
-        serverSocket.setTimeout(0); // disables
-        // serverSocket.write(data);
-    });
-
-    // if our tunnel server closes and our client connection is still open
-    // just open another one in case client wants to keep sending things
-    serverSocket.on('close', function() {
-    	if (serverSocket in tunnelServers) {
-            console.log("closing a server socket");
-    		delete tunnelServers[serverSocket];
-    		delete tunnelClients[clientSocket];
-    		initTunnelServerSocket(message, data, clientSocket, true);
-    	}
-    });
-
-    // if we receive any information back from the server,
-    // shovel back any bytes to our client
-    serverSocket.on('data', function (serverData) {
-        // TODO: broswer can't tell the different between header and content in serverData.
-        // the reason why simple.txt and simple.html doesn't load because we never close
-        // the connection properly.
-        
-
-        console.log("tunnel server data:"); 
-		
-
-        // console.log(decoder.write(serverData));
-        // this work except we have could potentially close to early if we need to download
-        // additional files such as css, img...etcgj
-        //servers[serverSocket].end(serverData);
-        clientSocket.write(serverData);
-		// servers[serverSocket].end();
-    });
-
-    connectObj = {};
-    if (!reconnect) {
-    	// connect to host:port defined in HTTP request
-	    var host = getRequestHostname(message);
-        console.log("new connection");
-	    console.log(host);
-	    var dstHost = host.hostname;
-	    var dstPort = host.port;
-
-	    var srcHost = "0.0.0.0";
-	    var srcPort = 0; // bind to any port
-	    connectObj = {port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort};
-	    tunnelClientReconnectData[clientSocket] = connectObj;
-    } else {
-        console.log("re-connection");
-    	connectObj = tunnelClientReconnectData[clientSocket];
-    }
-
-
-    // if you use google's ip: 8.8.8.8 you get unreachable destination
-    serverSocket.connect(connectObj);
-
-    return serverSocket;
-}
 
 printTime('Proxy listening on ' + SERVER_PORT);

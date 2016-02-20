@@ -198,7 +198,7 @@ net.createServer(function(clientSocket) {
 		    var srcHost = PROXY_HOST;
 		    var srcPort = 0; // bind to any port
 
-		    connectObj = {port: dstPort, host: dstHost, localAddress: srcHost, localPort: srcPort};
+		    connectObj = {port: dstPort, host: dstHost, };
 
             if (HTTP_method == "CONNECT") {
                 d_print("clientSocket received an HTTP CONNECT");
@@ -317,7 +317,7 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
         d_print("proxy has connected to server");
         // upon connection, send our data to the server
         d_print("data proxy is sending to server:");
-        d_print(decoder.write(data)); // this breaks the build ....
+        //d_print(decoder.write(data)); // this breaks the build ....
         serverSocket.setTimeout(0); // disables
         serverSocket.write(new Buffer(data, 'utf-8'));
     });
@@ -329,50 +329,50 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
         d_print("normal server data");
         // d_print(decoder.write(serverData)); // this breaks the build
 
-        // var endOfHeader = serverData.indexOf('\r\n\r\n');
-        // if (endOfHeader > -1) {
-        //     // message header of response found
-        //
-        //     // transform header
-        //     var headerBuf = serverData.slice(0, endOfHeader);
-        //     var bodyBuf = serverData.slice(endOfHeader+2);
-        //     d_print("header of response");
-        //     d_print(decoder.write(headerBuf));
-        //
-        //     d_print("body of response");
-        //     d_print(decoder.write(bodyBuf));
-        //
-        //     // // check if corrupted header
-        //     // var HTTP_method = getRequestMethod(decoder.write(headerBuf));
-        //     // if (HTTP_METHODS.indexOf(HTTP_method) < 0) {
-        //     // 	// method name doesn't match any in the protocol, so something is wrong.
-        //     // 	// close the client, he'll have to try again later
-        //     // 	d_print("method was corrupted, so we're not connecting to server");
-        //     // 	clientSocket.end();
-        //     // 	return;
-        //     // }
-        //     //
-        //     // // get info for server connection
-        //     // var host = getRequestHostname(decoder.write(headerBuf));
-		//     // if (host == undefined) {
-		//     //     d_print("host is undefined, here's the message it came from");
-		//     //     // host is undefined, so something is wrong.
-		//     //     // close the client, he'll have to try again later
-		//     //     d_print("Client hostname was corrupted, so we're not connecting to server");
-		//     //     clientSocket.end();
-		//     //     return;
-		//     // }
-        //
-        //     var transformedHeader = transformHTTPHeader(decoder.write(headerBuf));
-        //     d_print("transformed response header");
-        //     d_print(transformedHeader);
-        //
-        //     var transformedHeaderBuf = new Buffer(transformedHeader);
-        //     var transformedMessage = Buffer.concat([transformedHeaderBuf, bodyBuf]);
-        //     d_print("transformed message");
-        //     d_print(decoder.write(transformedMessage));
-        //     serverData = transformedMessage;
-        // }
+        var endOfHeader = serverData.indexOf('\r\n\r\n');
+        if (endOfHeader > -1) {
+            // message header of response found
+        
+            // transform header
+            var headerBuf = serverData.slice(0, endOfHeader);
+            var bodyBuf = serverData.slice(endOfHeader+2);
+            d_print("header of response");
+            d_print(decoder.write(headerBuf));
+        
+            d_print("body of response");
+            //d_print(decoder.write(bodyBuf));
+        
+            // // check if corrupted header
+            // var HTTP_method = getRequestMethod(decoder.write(headerBuf));
+            // if (HTTP_METHODS.indexOf(HTTP_method) < 0) {
+            // 	// method name doesn't match any in the protocol, so something is wrong.
+            // 	// close the client, he'll have to try again later
+            // 	d_print("method was corrupted, so we're not connecting to server");
+            // 	clientSocket.end();
+            // 	return;
+            // }
+            //
+            // // get info for server connection
+            // var host = getRequestHostname(decoder.write(headerBuf));
+		    // if (host == undefined) {
+		    //     d_print("host is undefined, here's the message it came from");
+		    //     // host is undefined, so something is wrong.
+		    //     // close the client, he'll have to try again later
+		    //     d_print("Client hostname was corrupted, so we're not connecting to server");
+		    //     clientSocket.end();
+		    //     return;
+		    // }
+        
+            var transformedHeader = transformHTTPHeader(decoder.write(headerBuf));
+            d_print("transformed response header");
+            d_print(transformedHeader);
+        
+            var transformedHeaderBuf = new Buffer(transformedHeader);
+            var transformedMessage = Buffer.concat([transformedHeaderBuf, bodyBuf]);
+            d_print("transformed message");
+            d_print(decoder.write(transformedMessage));
+            serverData = transformedMessage;
+        }
 
         clientSocket.write(serverData);
     })

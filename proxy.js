@@ -17,7 +17,7 @@ const HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "CONNECT"
 
 const HTTP_DEFAULT_PORT = 80;
 const HTTPS_DEFAULT_PORT = 443;
-const DEBUG = true;
+const DEBUG = false;
 
 function d_print(message) {
     if (DEBUG) {
@@ -108,15 +108,9 @@ function getRequestProtocolType(header) {
 // version so we don't have to deal with framing issues :)
 function transformHTTPHeader(header) {
     var headerLines = header.split("\r\n");
-    headerLines[0] = setHTTPVersion(headerLines[0], "1.0");
+    headerLines[0] = headerLines[0].replace("HTTP/1.1", "HTTP/1.0");
     headerLines = setConnectionTagClosed(headerLines);
     return headerLines.join("\r\n").concat("\r\n");
-}
-
-function setHTTPVersion(firstLineOfHeader, versionNum) {
-    firstLineSplit = firstLineOfHeader.split(" ");
-    firstLineSplit[2] = "HTTP/" + versionNum;
-    return firstLineSplit.join(" ");
 }
 
 // Takes an array of Strings, representing the lines representing the
@@ -171,7 +165,6 @@ net.createServer(function(clientSocket) {
         } else {
             d_print("DATA FROM ");
             var message = decoder.write(data);
-            message = transformHTTPHeader(message);
             // d_print("transformed HTTP request:");
             // d_print(message);
 
@@ -219,7 +212,7 @@ net.createServer(function(clientSocket) {
             // establish a connection to the server it wants to communicate
             // with and store the clientSocket mappings
             //clientSocket.write(new Buffer("data", 'utf-8'));
-            initNormalServerSocket(connectObj, message, clientSocket);
+            initNormalServerSocket(connectObj, transformHTTPHeader(message), clientSocket);
         //}
         }
 
@@ -323,7 +316,8 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
     serverSocket.on('connect', function () {
         d_print("proxy has connected to server");
         // upon connection, send our data to the server
-        d_print(decoder.write(data));
+        d_print("data proxy is sending to server:");
+        d_print(decoder.write(data)); // this breaks the build ....
         serverSocket.setTimeout(0); // disables
         serverSocket.write(new Buffer(data, 'utf-8'));
     });
@@ -333,7 +327,53 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
     serverSocket.on('data', function (serverData) {
         //var buf = new Buffer(transformHTTPHeader("" + data));
         d_print("normal server data");
-        d_print(decoder.write(serverData));
+        // d_print(decoder.write(serverData)); // this breaks the build
+
+        // var endOfHeader = serverData.indexOf('\r\n\r\n');
+        // if (endOfHeader > -1) {
+        //     // message header of response found
+        //
+        //     // transform header
+        //     var headerBuf = serverData.slice(0, endOfHeader);
+        //     var bodyBuf = serverData.slice(endOfHeader+2);
+        //     d_print("header of response");
+        //     d_print(decoder.write(headerBuf));
+        //
+        //     d_print("body of response");
+        //     d_print(decoder.write(bodyBuf));
+        //
+        //     // // check if corrupted header
+        //     // var HTTP_method = getRequestMethod(decoder.write(headerBuf));
+        //     // if (HTTP_METHODS.indexOf(HTTP_method) < 0) {
+        //     // 	// method name doesn't match any in the protocol, so something is wrong.
+        //     // 	// close the client, he'll have to try again later
+        //     // 	d_print("method was corrupted, so we're not connecting to server");
+        //     // 	clientSocket.end();
+        //     // 	return;
+        //     // }
+        //     //
+        //     // // get info for server connection
+        //     // var host = getRequestHostname(decoder.write(headerBuf));
+		//     // if (host == undefined) {
+		//     //     d_print("host is undefined, here's the message it came from");
+		//     //     // host is undefined, so something is wrong.
+		//     //     // close the client, he'll have to try again later
+		//     //     d_print("Client hostname was corrupted, so we're not connecting to server");
+		//     //     clientSocket.end();
+		//     //     return;
+		//     // }
+        //
+        //     var transformedHeader = transformHTTPHeader(decoder.write(headerBuf));
+        //     d_print("transformed response header");
+        //     d_print(transformedHeader);
+        //
+        //     var transformedHeaderBuf = new Buffer(transformedHeader);
+        //     var transformedMessage = Buffer.concat([transformedHeaderBuf, bodyBuf]);
+        //     d_print("transformed message");
+        //     d_print(decoder.write(transformedMessage));
+        //     serverData = transformedMessage;
+        // }
+
         clientSocket.write(serverData);
     })
 

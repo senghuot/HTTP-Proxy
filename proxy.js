@@ -17,7 +17,7 @@ const HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "CONNECT"
 
 const HTTP_DEFAULT_PORT = 80;
 const HTTPS_DEFAULT_PORT = 443;
-const DEBUG = false;
+const DEBUG = true;
 
 function d_print(message) {
     if (DEBUG) {
@@ -171,7 +171,9 @@ net.createServer(function(clientSocket) {
         } else {
             d_print("DATA FROM ");
             var message = decoder.write(data);
-            //message = transformHTTPHeader(message);
+            message = transformHTTPHeader(message);
+            // d_print("transformed HTTP request:");
+            // d_print(message);
 
         	// spec output
             firstLineOfHeader = kthLineOfHeader(message, 0).split(" ");
@@ -191,7 +193,7 @@ net.createServer(function(clientSocket) {
 		    if (host == undefined) {
 		        d_print("host is undefined, here's the message it came from");
 		        d_print(message);
-		        // host is undefined, so something is wrong. 
+		        // host is undefined, so something is wrong.
 		        // close the client, he'll have to try again later
 		        d_print("Client hostname was corrupted, so we're not connecting to server");
 		        clientSocket.end();
@@ -217,7 +219,7 @@ net.createServer(function(clientSocket) {
             // establish a connection to the server it wants to communicate
             // with and store the clientSocket mappings
             //clientSocket.write(new Buffer("data", 'utf-8'));
-            initNormalServerSocket(connectObj, data, clientSocket);
+            initNormalServerSocket(connectObj, message, clientSocket);
         //}
         }
 
@@ -255,7 +257,7 @@ net.createServer(function(clientSocket) {
 
 }).listen(PROXY_PORT);
 
-function initTunnelServerSocket(connectObj, data, clientSocket) {    
+function initTunnelServerSocket(connectObj, data, clientSocket) {
     var serverSocket = new net.Socket();
 
     d_print("starting tunnel to: " + connectObj.dstHost + ":" + connectObj.dstPort);
@@ -294,7 +296,7 @@ function initTunnelServerSocket(connectObj, data, clientSocket) {
     // can the ip be the problem?
     serverSocket.connect(connectObj, function() {
         d_print("connected to the server");
-        d_print(clientSocket.name);  
+        d_print(clientSocket.name);
         var buf = new Buffer("HTTP/1.0 200 OK \r\n\r\n");
         clientSocket.write(buf);
         tunnelConnections[clientSocket.name] = serverSocket;
@@ -321,6 +323,7 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
     serverSocket.on('connect', function () {
         d_print("proxy has connected to server");
         // upon connection, send our data to the server
+        d_print(decoder.write(data));
         serverSocket.setTimeout(0); // disables
         serverSocket.write(new Buffer(data, 'utf-8'));
     });
@@ -329,6 +332,8 @@ function initNormalServerSocket(connectObj, data, clientSocket) {
     // shovel back any bytes to our client
     serverSocket.on('data', function (serverData) {
         //var buf = new Buffer(transformHTTPHeader("" + data));
+        d_print("normal server data");
+        d_print(decoder.write(serverData));
         clientSocket.write(serverData);
     })
 
